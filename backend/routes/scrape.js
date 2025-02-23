@@ -1,12 +1,12 @@
-const express = require("express");
+const express = require('express');
+const ytScraper = require('../scraper/ytScraper');
 const router = express.Router();
-const instaScraper = require("../scraper/instaScraper"); // ✅ Correct Import
 
-router.get("/instagram", async (req, res) => {
+router.get('/youtube', async (req, res) => {
     const { url } = req.query;
-    if (!url) return res.status(400).json({ error: "URL is required" });
+    if (!url) return res.status(400).json({ error: "YouTube URL is required" });
 
-    const result = await instaScraper(url); // ✅ Make sure function name matches
+    const result = await ytScraper(url);
     res.json(result);
 });
 
