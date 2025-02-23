@@ -10,10 +10,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.7.9",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "node-telegram-bot-api": "^0.66.0",
     "puppeteer": "^24.2.1",
+    "telegraf": "^4.16.3",
     "ytdl-core": "^4.11.5"
   }
 }

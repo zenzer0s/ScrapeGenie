@@ -8,11 +8,16 @@ const PORT = 5000;
 app.use(cors());
 app.use(express.json());
 
-// Routes
-app.use("/scrape", scrapeRoutes);
+// Mount routes with /api prefix
+app.use("/api/scrape", scrapeRoutes);  // Changed from "/scrape" to "/api/scrape"
 
 app.get("/", (req, res) => {
     res.send("ScrapeGenie API is running...");
+});
+
+// Add health check endpoint
+app.get("/health", (req, res) => {
+    res.json({ status: "healthy" });
 });
 
 app.listen(PORT, () => {
