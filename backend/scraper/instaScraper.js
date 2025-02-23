@@ -1,33 +1,25 @@
-import puppeteer from 'puppeteer';
+const puppeteer = require("puppeteer");
 
-const scrapeInstagramReel = async (url) => {
-    if (!url.includes('instagram.com/reel/')) {
-        return { error: 'Invalid Instagram Reel URL' };
-    }
-    
-    const browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
-    
+async function instaScraper(url) {
     try {
-        await page.goto(url, { waitUntil: 'networkidle2' });
-        
-        // Extract video URL
-        const videoSrc = await page.evaluate(() => {
-            const videoElement = document.querySelector('video');
-            return videoElement ? videoElement.src : null;
-        });
-        
-        await browser.close();
-        
-        if (!videoSrc) {
-            return { error: 'Failed to extract video URL' };
-        }
-        
-        return { videoUrl: videoSrc };
-    } catch (error) {
-        await browser.close();
-        return { error: 'Failed to scrape Instagram Reel' };
-    }
-};
+        const browser = await puppeteer.launch({ headless: true });
+        const page = await browser.newPage();
+        await page.goto(url, { waitUntil: "networkidle2" });
 
-export default scrapeInstagramReel;
+        // Extract video/image URL
+        const mediaUrl = await page.evaluate(() => {
+            const video = document.querySelector("video");
+            const image = document.querySelector("img");
+            return video ? video.src : image ? image.src : null;
+        });
+
+        await browser.close();
+        return mediaUrl ? { mediaUrl } : { error: "Failed to fetch Instagram media" };
+    } catch (error) {
+        console.error("Instagram Scrape Error:", error);
+        return { error: "Scraping failed" };
+    }
+}
+
+// ✅ Properly export the function
+module.exports = instaScraper;
