@@ -86,21 +86,18 @@ bot.onText(/\/status/, async (msg) => {
     }
 });
 
-// Handle URL messages
+// Updated URL handling section
 bot.on('message', async (msg) => {
     if (msg.text && msg.text.startsWith('http')) {
         const chatId = msg.chat.id;
         const url = msg.text.trim();
 
         try {
-            // Send processing message
             const processingMsg = await bot.sendMessage(chatId, '🔄 Processing your URL...');
 
-            // Make request to backend
             const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
             const data = response.data;
 
-            // Delete processing message
             await bot.deleteMessage(chatId, processingMsg.message_id);
 
             if (!data.success) {
@@ -109,58 +106,46 @@ bot.on('message', async (msg) => {
 
             switch (data.type) {
                 case 'youtube':
-                    // Send title and thumbnail together
-                    await bot.sendPhoto(chatId, data.mediaUrl, {
-                        caption: `📺 ${data.title}\n\n🔗 ${data.originalUrl}`
-                    }).catch(async () => {
-                        // If sending photo fails, send text only
-                        await bot.sendMessage(chatId, 
-                            `📺 ${data.title}\n\n` +
-                            `❌ Couldn't load thumbnail\n\n` +
-                            `🔗 ${data.originalUrl}`
-                        );
-                    });
+                    await bot.sendMessage(chatId,
+                        `📺 ${data.title}\n\n` +
+                        `${data.description ? `📝 ${data.description}\n\n` : ''}` +
+                        `🔗 ${data.originalUrl}`
+                    );
+                    if (data.mediaUrl) {
+                        await bot.sendPhoto(chatId, data.mediaUrl).catch(() => {
+                            console.log('Failed to send YouTube thumbnail');
+                        });
+                    }
                     break;
 
                 case 'instagram':
-                    if (data.mediaUrl) {
-                        // Send media with caption
-                        await bot.sendPhoto(chatId, data.mediaUrl, {
-                            caption: `📸 ${data.title || 'Instagram Post'}\n\n` +
-                                   `${data.description ? data.description + '\n\n' : ''}` +
-                                   `🔗 ${data.originalUrl}`
-                        }).catch(async () => {
-                            // Fallback text message
-                            await bot.sendMessage(chatId,
-                                `📸 ${data.title || 'Instagram Post'}\n\n` +
-                                `${data.description ? data.description + '\n\n' : ''}` +
-                                `❌ Couldn't load media\n\n` +
-                                `🔗 ${data.originalUrl}`
-                            );
-                        });
-                    } else {
+                    if (data.contentType === 'reel') {
                         await bot.sendMessage(chatId,
-                            `📸 ${data.title || 'Instagram Post'}\n\n` +
-                            `${data.description ? data.description + '\n\n' : ''}` +
+                            `📱 Instagram Reel\n\n` +
+                            `${data.caption ? `📝 ${data.caption}\n\n` : ''}` +
                             `🔗 ${data.originalUrl}`
                         );
+                    } else {
+                        let message = `📸 Instagram Post\n\n`;
+                        if (data.caption) message += `📝 ${data.caption}\n\n`;
+                        message += `🔗 ${data.originalUrl}`;
+                        
+                        await bot.sendMessage(chatId, message);
+                        
+                        if (data.mediaUrl) {
+                            await bot.sendPhoto(chatId, data.mediaUrl).catch(() => {
+                                console.log('Failed to send Instagram media');
+                            });
+                        }
                     }
                     break;
 
                 case 'website':
-                    let message = '🌐 Website Information\n\n';
-                    if (data.title) message += `📑 ${data.title}\n\n`;
-                    if (data.description) message += `📝 ${data.description}\n\n`;
-                    message += `🔗 ${data.url || url}`;
-                    
-                    await bot.sendMessage(chatId, message);
-                    
-                    // If website has an image, send it separately
-                    if (data.image) {
-                        await bot.sendPhoto(chatId, data.image).catch(() => {
-                            // Ignore image sending errors
-                        });
-                    }
+                    await bot.sendMessage(chatId,
+                        `🌐 ${data.title}\n\n` +
+                        `${data.description ? `📝 ${data.description}\n\n` : ''}` +
+                        `🔗 ${data.originalUrl}`
+                    );
                     break;
 
                 default:

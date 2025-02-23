@@ -1,4 +1,4 @@
-// scrape.js
+// scrape.js (routes)
 const express = require('express');
 const ytScraper = require('../scraper/ytScraper');
 const instaScraper = require('../scraper/instaScraper');
@@ -17,12 +17,16 @@ router.post('/', async (req, res) => {
         }
 
         let result;
+        // Handle YouTube videos and shorts
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
             result = await ytScraper(url);
-        } else if (url.includes('instagram.com')) {
+        }
+        // Handle Instagram posts and reels
+        else if (url.includes('instagram.com')) {
             result = await instaScraper(url);
-        } else {
-            // For any other URL, use metadata scraper
+        }
+        // Handle any other URL
+        else {
             result = await scrapeMetadata(url);
         }
 
