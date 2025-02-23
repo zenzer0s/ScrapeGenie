@@ -1,5 +1,3 @@
----
-
 ### README for Backend
 
 ```markdown
@@ -85,6 +83,3 @@ npm test
   Integrate basic logging and error monitoring for production use.
 
 Feel free to modify this README to meet your evolving project needs.
-```
-
----
