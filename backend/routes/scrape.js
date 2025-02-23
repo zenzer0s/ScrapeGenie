@@ -1,10 +1,11 @@
+// scrape.js
 const express = require('express');
 const ytScraper = require('../scraper/ytScraper');
 const instaScraper = require('../scraper/instaScraper');
+const { scrapeMetadata } = require('../scraper/metadata');
 
 const router = express.Router();
 
-// General scraping endpoint
 router.post('/', async (req, res) => {
     try {
         const { url } = req.body;
@@ -21,16 +22,15 @@ router.post('/', async (req, res) => {
         } else if (url.includes('instagram.com')) {
             result = await instaScraper(url);
         } else {
-            return res.status(400).json({ 
-                success: false, 
-                error: "Unsupported URL type" 
-            });
+            // For any other URL, use metadata scraper
+            result = await scrapeMetadata(url);
         }
 
-        res.json({
-            success: true,
-            ...result
-        });
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        res.json(result);
     } catch (error) {
         console.error('Scraping error:', error);
         res.status(500).json({ 
@@ -39,9 +39,5 @@ router.post('/', async (req, res) => {
         });
     }
 });
-
-// Keep your existing routes
-router.get('/youtube', async (req, res) => { /* ... */ });
-router.get('/instagram', async (req, res) => { /* ... */ });
 
 module.exports = router;

@@ -1,41 +1,52 @@
+// ytScraper.js
 const puppeteer = require('puppeteer');
+const getBrowser = require('./browserManager');
 
 async function ytScraper(videoUrl) {
-    if (!videoUrl.includes('youtube.com') && !videoUrl.includes('youtu.be')) {
-        return { error: "Invalid YouTube URL" };
+    if (!videoUrl.includes('youtube.com/watch?v=') && !videoUrl.includes('youtu.be/')) {
+        return { 
+            success: false, 
+            error: "Invalid YouTube URL" 
+        };
     }
 
-    const browser = await puppeteer.launch({
-        headless: "new",
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-    });
-    const page = await browser.newPage();
-
+    let browser = null;
     try {
-        await page.goto(videoUrl, { waitUntil: 'domcontentloaded' });
+        browser = await getBrowser();
+        const page = await browser.newPage();
+        await page.goto(videoUrl, { waitUntil: 'networkidle0', timeout: 30000 });
 
-        // Extract video title with updated selector
-        const title = await page.$eval('meta[name="title"]', el => el.content).catch(() => null);
+        // Extract video ID
+        let videoId = videoUrl.includes("youtube.com/watch?v=") 
+            ? new URL(videoUrl).searchParams.get("v")
+            : videoUrl.split("youtu.be/")[1]?.split("?")[0];
 
-        // Extract highest quality thumbnail (720p)
-        let videoId;
-        if (videoUrl.includes("youtube.com/watch?v=")) {
-            videoId = new URL(videoUrl).searchParams.get("v");
-        } else if (videoUrl.includes("youtu.be/")) {
-            videoId = videoUrl.split("/").pop().split("?")[0];
+        if (!videoId) {
+            throw new Error("Could not extract video ID");
         }
-        const thumbnailUrl = videoId ? `https://i.ytimg.com/vi/${videoId}/hq720.jpg` : null;
 
+        // Get metadata
+        const data = await page.evaluate(() => ({
+            title: document.querySelector('meta[name="title"]')?.content
+                || document.querySelector('title')?.textContent
+                || null
+        }));
+
+        // Construct response with high-quality thumbnail
         return {
-            title: title || "Title not found",
-            thumbnailUrl: thumbnailUrl || "Thumbnail not found",
-            videoUrl: videoUrl
+            success: true,
+            type: 'youtube',
+            title: data.title || "Title not found",
+            mediaUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+            originalUrl: videoUrl
         };
+
     } catch (error) {
         console.error("YouTube Scrape Error:", error);
-        return { error: "Failed to fetch YouTube video details" };
-    } finally {
-        await browser.close();
+        return { 
+            success: false, 
+            error: "Failed to fetch YouTube video details" 
+        };
     }
 }
 

@@ -31,12 +31,11 @@ bot.onText(/\/start/, async (msg) => {
     try {
         await bot.sendMessage(chatId, 
             'Welcome to ScrapeGenie! 🧞‍♂️\n\n' +
-            'I can help you scrape data from various sources.\n\n' +
-            'Available commands:\n' +
-            '/start - Show this welcome message\n' +
-            '/help - Show available commands\n' +
-            '/status - Check bot status\n\n' +
-            'Simply send me a URL to start scraping!'
+            'I can help you extract information from:\n' +
+            '• YouTube videos 📺\n' +
+            '• Instagram posts 📸\n' +
+            '• Any website 🌐\n\n' +
+            'Just send me a URL to get started!'
         );
     } catch (error) {
         console.error('Error in /start command:', error);
@@ -49,11 +48,17 @@ bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
     try {
         await bot.sendMessage(chatId,
-            '🔍 Supported URLs:\n\n' +
-            '• Instagram posts and profiles\n' +
-            '• YouTube videos and channels\n' +
-            '• General web pages\n\n' +
-            'Just send me any URL and I\'ll extract the relevant information!'
+            '🔍 How to use ScrapeGenie:\n\n' +
+            '1. YouTube Videos:\n' +
+            '   Send any YouTube URL to get title and thumbnail\n\n' +
+            '2. Instagram Posts:\n' +
+            '   Send any Instagram post URL to get content\n\n' +
+            '3. Websites:\n' +
+            '   Send any website URL to get its information\n\n' +
+            'Commands:\n' +
+            '/start - Start the bot\n' +
+            '/help - Show this help message\n' +
+            '/status - Check bot status'
         );
     } catch (error) {
         console.error('Error in /help command:', error);
@@ -65,15 +70,14 @@ bot.onText(/\/help/, async (msg) => {
 bot.onText(/\/status/, async (msg) => {
     const chatId = msg.chat.id;
     try {
-        // Check backend status
         const status = await checkBackendStatus();
         const uptime = process.uptime();
         const uptimeStr = formatUptime(uptime);
         
         await bot.sendMessage(chatId,
-            '🤖 System Status:\n\n' +
-            `✅ Bot: Running\n` +
-            `⏱ Bot Uptime: ${uptimeStr}\n` +
+            '🤖 Bot Status\n\n' +
+            `✅ Bot: Online\n` +
+            `⏱ Uptime: ${uptimeStr}\n` +
             `${status ? '✅' : '❌'} Backend: ${status ? 'Connected' : 'Not Connected'}`
         );
     } catch (error) {
@@ -89,42 +93,80 @@ bot.on('message', async (msg) => {
         const url = msg.text.trim();
 
         try {
-            // Send initial processing message
-            await bot.sendMessage(chatId, '🔄 Processing your URL... Please wait.');
+            // Send processing message
+            const processingMsg = await bot.sendMessage(chatId, '🔄 Processing your URL...');
 
-            // Make request to backend scraping service
+            // Make request to backend
             const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
             const data = response.data;
 
-            // Format and send the scraped data
-            if (data.success) {
-                let message = '✅ Here\'s what I found:\n\n';
-                
-                if (data.title) message += `📑 Title: ${data.title}\n`;
-                if (data.description) message += `📝 Description: ${data.description}\n`;
-                if (data.metadata) {
-                    message += '\n📊 Additional Information:\n';
-                    for (const [key, value] of Object.entries(data.metadata)) {
-                        message += `• ${key}: ${value}\n`;
-                    }
-                }
+            // Delete processing message
+            await bot.deleteMessage(chatId, processingMsg.message_id);
 
-                await bot.sendMessage(chatId, message);
-
-                // If there are media files, send them
-                if (data.mediaUrls && data.mediaUrls.length > 0) {
-                    await bot.sendMessage(chatId, '🖼 Media found! Processing...');
-                    for (const mediaUrl of data.mediaUrls) {
-                        try {
-                            await bot.sendPhoto(chatId, mediaUrl);
-                        } catch (error) {
-                            console.error('Error sending media:', error);
-                        }
-                    }
-                }
-            } else {
+            if (!data.success) {
                 throw new Error(data.error || 'Failed to scrape data');
             }
+
+            switch (data.type) {
+                case 'youtube':
+                    // Send title and thumbnail together
+                    await bot.sendPhoto(chatId, data.mediaUrl, {
+                        caption: `📺 ${data.title}\n\n🔗 ${data.originalUrl}`
+                    }).catch(async () => {
+                        // If sending photo fails, send text only
+                        await bot.sendMessage(chatId, 
+                            `📺 ${data.title}\n\n` +
+                            `❌ Couldn't load thumbnail\n\n` +
+                            `🔗 ${data.originalUrl}`
+                        );
+                    });
+                    break;
+
+                case 'instagram':
+                    if (data.mediaUrl) {
+                        // Send media with caption
+                        await bot.sendPhoto(chatId, data.mediaUrl, {
+                            caption: `📸 ${data.title || 'Instagram Post'}\n\n` +
+                                   `${data.description ? data.description + '\n\n' : ''}` +
+                                   `🔗 ${data.originalUrl}`
+                        }).catch(async () => {
+                            // Fallback text message
+                            await bot.sendMessage(chatId,
+                                `📸 ${data.title || 'Instagram Post'}\n\n` +
+                                `${data.description ? data.description + '\n\n' : ''}` +
+                                `❌ Couldn't load media\n\n` +
+                                `🔗 ${data.originalUrl}`
+                            );
+                        });
+                    } else {
+                        await bot.sendMessage(chatId,
+                            `📸 ${data.title || 'Instagram Post'}\n\n` +
+                            `${data.description ? data.description + '\n\n' : ''}` +
+                            `🔗 ${data.originalUrl}`
+                        );
+                    }
+                    break;
+
+                case 'website':
+                    let message = '🌐 Website Information\n\n';
+                    if (data.title) message += `📑 ${data.title}\n\n`;
+                    if (data.description) message += `📝 ${data.description}\n\n`;
+                    message += `🔗 ${data.url || url}`;
+                    
+                    await bot.sendMessage(chatId, message);
+                    
+                    // If website has an image, send it separately
+                    if (data.image) {
+                        await bot.sendPhoto(chatId, data.image).catch(() => {
+                            // Ignore image sending errors
+                        });
+                    }
+                    break;
+
+                default:
+                    throw new Error('Unsupported content type');
+            }
+
         } catch (error) {
             console.error('Error processing URL:', error);
             await bot.sendMessage(chatId, 
@@ -155,9 +197,6 @@ function formatUptime(uptime) {
     return `${days}d ${hours}h ${minutes}m ${seconds}s`;
 }
 
-// Startup message
-console.log("🚀 Telegram Bot is running...");
-
 // Handle process termination
 process.on('SIGINT', () => {
     console.log('\n👋 Shutting down bot gracefully...');
@@ -168,3 +207,5 @@ process.on('SIGINT', () => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
+
+console.log("🚀 Bot is running...");
