@@ -11,7 +11,11 @@ async function scrapeMetadata(url) {
         browser = await getBrowser();
         const page = await browser.newPage();
         
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        await page.setUserAgent(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+            'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+            'Chrome/91.0.4472.124 Safari/537.36'
+        );
         
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
 
@@ -24,15 +28,29 @@ async function scrapeMetadata(url) {
                 return null;
             };
 
+            // Try to get description from meta tags first.
+            let description = getMetaContent([
+                'meta[name="description"]',
+                'meta[property="og:description"]',
+                'meta[name="twitter:description"]'
+            ]);
+            
+            // Fallback: if description is empty, attempt to find a suitable paragraph.
+            if (!description || !description.trim()) {
+                // Select all <p> elements inside .mw-parser-output if available.
+                const paragraphs = Array.from(document.querySelectorAll('.mw-parser-output p'));
+                // Filter out paragraphs that are too short (less than 50 characters)
+                const validParagraphs = paragraphs.filter(p => p.textContent && p.textContent.trim().length > 50);
+                if (validParagraphs.length > 0) {
+                    description = validParagraphs[0].textContent.trim();
+                }
+            }
+
             return {
-                title: document.title || 
-                       getMetaContent(['meta[property="og:title"]', 'meta[name="title"]']) || 
+                title: document.title ||
+                       getMetaContent(['meta[property="og:title"]', 'meta[name="title"]']) ||
                        "No Title",
-                description: getMetaContent([
-                    'meta[name="description"]',
-                    'meta[property="og:description"]',
-                    'meta[name="twitter:description"]'
-                ]) || "No Description",
+                description: description || "No Description",
                 originalUrl: window.location.href
             };
         });
