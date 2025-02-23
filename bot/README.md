@@ -1,5 +1,3 @@
-### README for Bot
-
 # ScrapeGenie Bot
 
 This is the Telegram bot for ScrapeGenie. It receives URLs from users, sends them to the backend for scraping, and then presents the extracted data in a clean, formatted message.
@@ -59,16 +57,3 @@ bot/
 
 - Use the `/start`, `/help`, `/status`, and `/usage` commands to verify functionality.
 - Send various URLs (YouTube, Instagram, and website links) to see how the bot processes and formats the responses.
-
-## Additional Recommendations
-
-- **UI/UX Enhancements:**  
-  The bot leverages Markdown and inline keyboards for a better user experience. Future enhancements may include better error messages, loading animations, and caching.
-- **Modularity:**  
-  The separation between commands and message processing improves maintainability and scalability.
-- **Logging:**  
-  Consider integrating a robust logging mechanism to capture errors and usage patterns.
-- **Future Scalability:**  
-  As the project grows, you may split the bot and backend into separate services and integrate CI/CD pipelines for testing.
-
-Feel free to adjust this README as your project evolves and new features are added.
