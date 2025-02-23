@@ -18,7 +18,11 @@ async function ytScraper(videoUrl) {
         const page = await browser.newPage();
         
         // Set user agent
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+        await page.setUserAgent(
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+            'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+            'Chrome/91.0.4472.124 Safari/537.36'
+        );
         
         await page.goto(videoUrl, { waitUntil: 'networkidle0', timeout: 30000 });
 
@@ -36,19 +40,17 @@ async function ytScraper(videoUrl) {
             throw new Error("Could not extract video ID");
         }
 
-        // Get metadata
-        const data = await page.evaluate(() => ({
-            title: document.querySelector('meta[name="title"]')?.content
-                || document.querySelector('title')?.textContent
-                || null,
-            description: document.querySelector('meta[name="description"]')?.content || null
-        }));
+        // Get title from page
+        const title = await page.evaluate(() => {
+            return document.querySelector('meta[name="title"]')?.content ||
+                   document.querySelector('title')?.textContent || 
+                   "Title not found";
+        });
 
         return {
             success: true,
             type: 'youtube',
-            title: data.title || "Title not found",
-            description: data.description,
+            title: title,
             mediaUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
             originalUrl: videoUrl
         };

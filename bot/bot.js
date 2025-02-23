@@ -20,7 +20,6 @@ const bot = new TelegramBot(token, { polling: true });
 bot.on('polling_error', (error) => {
     console.error('Polling error:', error);
 });
-
 bot.on('error', (error) => {
     console.error('General error:', error);
 });
@@ -73,7 +72,6 @@ bot.onText(/\/status/, async (msg) => {
         const status = await checkBackendStatus();
         const uptime = process.uptime();
         const uptimeStr = formatUptime(uptime);
-        
         await bot.sendMessage(chatId,
             '🤖 Bot Status\n\n' +
             `✅ Bot: Online\n` +
@@ -91,53 +89,47 @@ bot.on('message', async (msg) => {
     if (msg.text && msg.text.startsWith('http')) {
         const chatId = msg.chat.id;
         const url = msg.text.trim();
-
         try {
             const processingMsg = await bot.sendMessage(chatId, '🔄 Processing your URL...');
-
             const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
             const data = response.data;
-
             await bot.deleteMessage(chatId, processingMsg.message_id);
-
             if (!data.success) {
                 throw new Error(data.error || 'Failed to scrape data');
             }
-
             switch (data.type) {
-                case 'youtube':
-                    await bot.sendMessage(chatId,
-                        `📺 ${data.title}\n\n` +
-                        `${data.description ? `📝 ${data.description}\n\n` : ''}` +
-                        `🔗 ${data.originalUrl}`
-                    );
+                case 'youtube': {
+                    // Prepare caption combining title and original URL
+                    const caption = `📺 ${data.title}\n🔗 ${data.originalUrl}`;
                     if (data.mediaUrl) {
-                        await bot.sendPhoto(chatId, data.mediaUrl).catch(() => {
-                            console.log('Failed to send YouTube thumbnail');
-                        });
+                        try {
+                            // Force sending as one message: photo with caption
+                            await bot.sendPhoto(chatId, data.mediaUrl, { caption });
+                        } catch (err) {
+                            console.error("Failed to send YouTube photo, falling back to text message:", err);
+                            await bot.sendMessage(chatId, caption);
+                        }
+                    } else {
+                        await bot.sendMessage(chatId, caption);
                     }
                     break;
-
+                }
                 case 'instagram':
                     if (data.contentType === 'reel') {
-                        // For reels, send text message with caption and original link
                         await bot.sendMessage(chatId,
                             `📱 Instagram Reel\n\n` +
                             `${data.caption ? `📝 ${data.caption}\n\n` : ''}` +
                             `🔗 ${data.originalUrl}`
                         );
                     } else {
-                        // For posts, send photo with caption and original link in one message.
                         const messageText = `${data.caption}\n\n🔗 ${data.originalUrl}`;
                         if (data.mediaUrl) {
                             await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText });
                         } else {
-                            // Fallback in case no media URL is available
                             await bot.sendMessage(chatId, `📸 Instagram Post\n\n${messageText}`);
                         }
                     }
                     break;
-
                 case 'website':
                     await bot.sendMessage(chatId,
                         `🌐 ${data.title}\n\n` +
@@ -145,11 +137,9 @@ bot.on('message', async (msg) => {
                         `🔗 ${data.originalUrl}`
                     );
                     break;
-
                 default:
                     throw new Error('Unsupported content type');
             }
-
         } catch (error) {
             console.error('Error processing URL:', error);
             await bot.sendMessage(chatId, 
@@ -186,9 +176,7 @@ process.on('SIGINT', () => {
     bot.stopPolling();
     process.exit(0);
 });
-
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
-
 console.log("🚀 Bot is running...");
