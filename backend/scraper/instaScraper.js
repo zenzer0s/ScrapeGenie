@@ -30,7 +30,35 @@ const instaScraper = async (url) => {
       return { caption };
     });
 
-    // Attempt to extract the full image URL via JSON data
+    let cleanCaption = metaData.caption;
+
+    // Clean the caption differently for reels and posts
+    if (isReel) {
+      // For reels, try extracting text within quotes first
+      const quoteMatch = cleanCaption.match(/"([^"]+)"/);
+      if (quoteMatch && quoteMatch[1]) {
+        cleanCaption = quoteMatch[1].trim();
+      } else {
+        // Fallback: remove leading metadata by finding the first colon
+        const colonIndex = cleanCaption.indexOf(':');
+        if (colonIndex !== -1) {
+          cleanCaption = cleanCaption.substring(colonIndex + 1).trim();
+        }
+      }
+    } else {
+      // For posts, the logic we already had
+      const quoteMatch = cleanCaption.match(/"([^"]+)"/);
+      if (quoteMatch && quoteMatch[1]) {
+        cleanCaption = quoteMatch[1].trim();
+      } else {
+        const colonIndex = cleanCaption.indexOf(':');
+        if (colonIndex !== -1) {
+          cleanCaption = cleanCaption.substring(colonIndex + 1).trim();
+        }
+      }
+    }
+
+    // For posts, attempt to get full image URL
     let fullImageUrl = null;
     if (!isReel) {
       try {
@@ -54,42 +82,25 @@ const instaScraper = async (url) => {
       } catch (err) {
         console.error("Error extracting full image URL via JSON:", err);
       }
-    }
 
-    // Fallback: extract the best image from within the main post container
-    if (!fullImageUrl && !isReel) {
-      try {
-        fullImageUrl = await page.evaluate(() => {
-          // Try to target the post container, often the first <article> element
-          const postContainer = document.querySelector('article');
-          if (postContainer) {
-            const imgs = Array.from(postContainer.querySelectorAll('img'));
-            if (imgs.length) {
-              // Choose the image with the highest naturalWidth from within the container
-              const maxImg = imgs.reduce((prev, curr) => {
-                return (prev.naturalWidth > curr.naturalWidth) ? prev : curr;
-              });
-              return maxImg.src;
+      // Fallback: extract best image from within the main post container
+      if (!fullImageUrl) {
+        try {
+          fullImageUrl = await page.evaluate(() => {
+            const postContainer = document.querySelector('article');
+            if (postContainer) {
+              const imgs = Array.from(postContainer.querySelectorAll('img'));
+              if (imgs.length) {
+                const maxImg = imgs.reduce((prev, curr) => {
+                  return (prev.naturalWidth > curr.naturalWidth) ? prev : curr;
+                });
+                return maxImg.src;
+              }
             }
-          }
-          return null;
-        });
-      } catch (err) {
-        console.error("Error extracting full image URL via fallback:", err);
-      }
-    }
-
-    // Clean the caption by extracting text within quotes if available,
-    // otherwise remove any leading metadata (fallback)
-    let cleanCaption = metaData.caption;
-    if (!isReel) {
-      const quoteMatch = cleanCaption.match(/"([^"]+)"/);
-      if (quoteMatch && quoteMatch[1]) {
-        cleanCaption = quoteMatch[1].trim();
-      } else {
-        const colonIndex = cleanCaption.indexOf(':');
-        if (colonIndex !== -1) {
-          cleanCaption = cleanCaption.substring(colonIndex + 1).trim();
+            return null;
+          });
+        } catch (err) {
+          console.error("Error extracting full image URL via fallback:", err);
         }
       }
     }
