@@ -1,0 +1,6 @@
+node_modules/
+.env
+backend/config/config.js
+backend/logs/
+backend/tests/
+backend/screenshots/
