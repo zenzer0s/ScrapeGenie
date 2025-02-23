@@ -10,20 +10,21 @@ async function scrapeMetadata(url) {
     try {
         browser = await getBrowser();
         const page = await browser.newPage();
-        
+
         await page.setUserAgent(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
             'AppleWebKit/537.36 (KHTML, like Gecko) ' +
             'Chrome/91.0.4472.124 Safari/537.36'
         );
-        
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+
+        // Use a slightly longer wait to let dynamic content load
+        await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
 
         const metadata = await page.evaluate(() => {
             const getMetaContent = (selectors) => {
                 for (let selector of selectors) {
                     const element = document.querySelector(selector);
-                    if (element?.content) return element.content;
+                    if (element && element.content && element.content.trim()) return element.content.trim();
                 }
                 return null;
             };
@@ -34,18 +35,41 @@ async function scrapeMetadata(url) {
                 'meta[property="og:description"]',
                 'meta[name="twitter:description"]'
             ]);
-            
-            // Fallback: if description is empty, attempt to find a suitable paragraph.
-            if (!description || !description.trim()) {
-                // Select all <p> elements inside .mw-parser-output if available.
-                const paragraphs = Array.from(document.querySelectorAll('.mw-parser-output p'));
-                // Filter out paragraphs that are too short or appear to contain inline CSS (e.g. containing "{" or "}")
+
+            // Fallback 1: try known containers (Wikipedia, Medium, etc.)
+            if (!description) {
+                let paragraphs = [];
+                // Try Wikipedia container first.
+                const wikiParas = document.querySelectorAll('.mw-parser-output p');
+                if (wikiParas.length > 0) {
+                    paragraphs = Array.from(wikiParas);
+                } else {
+                    // Try generic article container (commonly used in Medium)
+                    const articleParas = document.querySelectorAll('article p');
+                    if (articleParas.length > 0) {
+                        paragraphs = Array.from(articleParas);
+                    }
+                }
+                // Filter out paragraphs that are too short or seem to contain inline CSS/code.
                 const validParagraphs = paragraphs.filter(p => {
                     const text = p.textContent ? p.textContent.trim() : "";
                     return text.length > 50 && !text.includes("{") && !text.includes("}");
                 });
                 if (validParagraphs.length > 0) {
                     description = validParagraphs[0].textContent.trim();
+                }
+            }
+            
+            // Fallback 2: if still no description, check for an <article> element and use its inner text (truncated).
+            if (!description) {
+                const article = document.querySelector('article');
+                if (article && article.innerText) {
+                    const text = article.innerText.trim();
+                    if (text.length > 100) {
+                        description = text.substring(0, 300) + "...";
+                    } else {
+                        description = text;
+                    }
                 }
             }
 
@@ -65,9 +89,9 @@ async function scrapeMetadata(url) {
         };
     } catch (error) {
         console.error("Metadata Scraping error:", error);
-        return { 
-            success: false, 
-            error: error.message 
+        return {
+            success: false,
+            error: error.message
         };
     }
 }
