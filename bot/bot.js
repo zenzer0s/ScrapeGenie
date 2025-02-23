@@ -17,51 +17,46 @@ if (!token) {
 const bot = new TelegramBot(token, { polling: true });
 
 // Error handling
-bot.on('polling_error', (error) => {
-    console.error('Polling error:', error);
-});
-bot.on('error', (error) => {
-    console.error('General error:', error);
-});
+bot.on('polling_error', (error) => console.error('Polling error:', error));
+bot.on('error', (error) => console.error('General error:', error));
 
 // Start command
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     try {
         await bot.sendMessage(chatId, 
-            'Welcome to ScrapeGenie! 🧞‍♂️\n\n' +
-            'I can help you extract information from:\n' +
-            '• YouTube videos 📺\n' +
-            '• Instagram posts 📸\n' +
-            '• Any website 🌐\n\n' +
-            'Just send me a URL to get started!'
-        );
+            `👋 *Welcome to ScrapeGenie!* 🧞‍♂️\n\n` +
+            `I can extract information from:\n\n` +
+            `🔹 *YouTube Videos* 📺\n` +
+            `🔹 *Instagram Posts & Reels* 📸\n` +
+            `🔹 *Any Website* 🌍\n\n` +
+            `📌 Just send me a URL and I’ll do the magic!`
+        , { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Error in /start command:', error);
-        await bot.sendMessage(chatId, '❌ Sorry, there was an error processing your request.');
+        await bot.sendMessage(chatId, '❌ _Sorry, there was an error processing your request._', { parse_mode: 'Markdown' });
     }
 });
 
-// Help command
+// Help command with improved formatting
 bot.onText(/\/help/, async (msg) => {
     const chatId = msg.chat.id;
     try {
         await bot.sendMessage(chatId,
-            '🔍 How to use ScrapeGenie:\n\n' +
-            '1. YouTube Videos:\n' +
-            '   Send any YouTube URL to get title and thumbnail\n\n' +
-            '2. Instagram Posts:\n' +
-            '   Send any Instagram post URL to get content\n\n' +
-            '3. Websites:\n' +
-            '   Send any website URL to get its information\n\n' +
-            'Commands:\n' +
-            '/start - Start the bot\n' +
-            '/help - Show this help message\n' +
-            '/status - Check bot status'
-        );
+            `📖 *ScrapeGenie Help Guide*\n\n` +
+            `🔹 Send a URL to extract its details.\n\n` +
+            `💡 *Supported Platforms:*\n` +
+            `   • *YouTube* - Gets title, thumbnail, and video link.\n` +
+            `   • *Instagram* - Extracts posts, reels with captions.\n` +
+            `   • *Websites* - Fetches title, description & preview.\n\n` +
+            `🔹 Commands:\n` +
+            `/start - Start the bot\n` +
+            `/help - Show this help message\n` +
+            `/status - Check bot status\n`
+        , { parse_mode: 'Markdown' });
     } catch (error) {
         console.error('Error in /help command:', error);
-        await bot.sendMessage(chatId, '❌ Sorry, there was an error processing your request.');
+        await bot.sendMessage(chatId, '❌ _Sorry, there was an error processing your request._', { parse_mode: 'Markdown' });
     }
 });
 
@@ -72,85 +67,83 @@ bot.onText(/\/status/, async (msg) => {
         const status = await checkBackendStatus();
         const uptime = process.uptime();
         const uptimeStr = formatUptime(uptime);
+
         await bot.sendMessage(chatId,
-            '🤖 Bot Status\n\n' +
-            `✅ Bot: Online\n` +
-            `⏱ Uptime: ${uptimeStr}\n` +
-            `${status ? '✅' : '❌'} Backend: ${status ? 'Connected' : 'Not Connected'}`
-        );
+            `🟢 *Bot Status*\n\n` +
+            `✅ *Bot:* Online\n` +
+            `⏱ *Uptime:* ${uptimeStr}\n` +
+            `${status ? '✅' : '❌'} *Backend:* ${status ? 'Connected' : 'Not Connected'}`
+        , { parse_mode: 'Markdown' });
+
     } catch (error) {
         console.error('Error in /status command:', error);
-        await bot.sendMessage(chatId, '❌ Sorry, there was an error checking the status.');
+        await bot.sendMessage(chatId, '❌ _Sorry, there was an error checking the status._', { parse_mode: 'Markdown' });
     }
 });
 
-// Updated URL handling section
+// Improved URL handling with enhanced UX
 bot.on('message', async (msg) => {
     if (msg.text && msg.text.startsWith('http')) {
         const chatId = msg.chat.id;
         const url = msg.text.trim();
+
         try {
-            const processingMsg = await bot.sendMessage(chatId, '🔄 Processing your URL...');
+            // Send loading message
+            const processingMsg = await bot.sendMessage(chatId, '⏳ _Fetching details..._', { parse_mode: 'Markdown' });
+
             const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
             const data = response.data;
+
             await bot.deleteMessage(chatId, processingMsg.message_id);
+
             if (!data.success) {
                 throw new Error(data.error || 'Failed to scrape data');
             }
+
             switch (data.type) {
                 case 'youtube': {
-                    // Prepare caption combining title and original URL with an extra newline for spacing.
-                    const caption = `📺 ${data.title}\n\n🔗 ${data.originalUrl}`;
+                    const caption = `📺 *${data.title}*\n\n🔗 [Watch Video](${data.originalUrl})`;
                     if (data.mediaUrl) {
-                        try {
-                            // Force sending as one message: photo with caption
-                            await bot.sendPhoto(chatId, data.mediaUrl, { caption });
-                        } catch (err) {
-                            console.error("Failed to send YouTube photo, falling back to text message:", err);
-                            await bot.sendMessage(chatId, caption);
-                        }
+                        await bot.sendPhoto(chatId, data.mediaUrl, { caption, parse_mode: 'Markdown' });
                     } else {
-                        await bot.sendMessage(chatId, caption);
+                        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
                     }
                     break;
                 }
                 case 'instagram':
                     if (data.contentType === 'reel') {
                         await bot.sendMessage(chatId,
-                            `📱 Instagram Reel\n\n` +
-                            `${data.caption ? `📝 ${data.caption}\n\n` : ''}` +
-                            `🔗 ${data.originalUrl}`
-                        );
+                            `📱 *Instagram Reel*\n\n📝 *Caption:* ${data.caption}\n\n🔗 [View Reel](${data.originalUrl})`
+                        , { parse_mode: 'Markdown' });
                     } else {
-                        const messageText = `${data.caption}\n\n🔗 ${data.originalUrl}`;
+                        const messageText = `📸 *Instagram Post*\n\n📝 ${data.caption}\n\n🔗 [View Post](${data.originalUrl})`;
                         if (data.mediaUrl) {
-                            await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText });
+                            await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText, parse_mode: 'Markdown' });
                         } else {
-                            await bot.sendMessage(chatId, `📸 Instagram Post\n\n${messageText}`);
+                            await bot.sendMessage(chatId, messageText, { parse_mode: 'Markdown' });
                         }
                     }
                     break;
                 case 'website':
                     await bot.sendMessage(chatId,
-                        `🌐 ${data.title}\n\n` +
-                        `${data.description ? `📝 ${data.description}\n\n` : ''}` +
-                        `🔗 ${data.originalUrl}`
-                    );
+                        `🌍 *${data.title}*\n\n📝 ${data.description}\n\n🔗 [Read More](${data.originalUrl})`
+                    , { parse_mode: 'Markdown' });
                     break;
                 default:
                     throw new Error('Unsupported content type');
             }
+
         } catch (error) {
             console.error('Error processing URL:', error);
-            await bot.sendMessage(chatId, 
-                '❌ Sorry, I encountered an error while processing your URL.\n' +
-                'Please make sure the URL is valid and try again.'
-            );
+            await bot.sendMessage(chatId,
+                '❌ _Sorry, I encountered an error while processing your URL._\n' +
+                '_Please make sure the link is valid and try again._'
+            , { parse_mode: 'Markdown' });
         }
     }
 });
 
-// Utility function to check backend status
+// Check backend status
 async function checkBackendStatus() {
     try {
         await axios.get(`${BACKEND_URL}/health`);
@@ -161,7 +154,7 @@ async function checkBackendStatus() {
     }
 }
 
-// Utility function to format uptime
+// Format uptime
 function formatUptime(uptime) {
     const days = Math.floor(uptime / 86400);
     const hours = Math.floor((uptime % 86400) / 3600);
