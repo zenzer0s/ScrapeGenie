@@ -5,16 +5,19 @@ async function ytScraper(videoUrl) {
         return { error: "Invalid YouTube URL" };
     }
 
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({ headless: "new" }); // Use "new" mode for better support
     const page = await browser.newPage();
 
     try {
-        await page.goto(videoUrl, { waitUntil: 'domcontentloaded' });
+        await page.goto(videoUrl, { waitUntil: 'networkidle2' }); // Wait for page to fully load
 
-        // Extract video title using correct selector
+        // Wait for title element to appear
+        await page.waitForSelector('meta[name="title"]', { timeout: 5000 });
+
+        // Extract title from meta tag
         const title = await page.$eval('meta[name="title"]', el => el.content).catch(() => null);
 
-        // Extract thumbnail URL
+        // Extract video ID and thumbnail URL
         let videoId;
         if (videoUrl.includes("youtube.com/watch?v=")) {
             videoId = new URL(videoUrl).searchParams.get("v");
@@ -23,7 +26,6 @@ async function ytScraper(videoUrl) {
         }
         const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` : null;
 
-        // Return extracted data
         return {
             title: title || "Title not found",
             thumbnailUrl: thumbnailUrl || "Thumbnail not found",

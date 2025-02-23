@@ -1,25 +1,38 @@
-const puppeteer = require("puppeteer");
+const getBrowser = require("./browserManager");
 
-async function instaScraper(url) {
+async function instaScraper(instaUrl) {
+    if (!instaUrl.includes("instagram.com/p/")) {
+        return { error: "Invalid Instagram URL" };
+    }
+
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+
     try {
-        const browser = await puppeteer.launch({ headless: true });
-        const page = await browser.newPage();
-        await page.goto(url, { waitUntil: "networkidle2" });
-
-        // Extract video/image URL
-        const mediaUrl = await page.evaluate(() => {
-            const video = document.querySelector("video");
-            const image = document.querySelector("img");
-            return video ? video.src : image ? image.src : null;
+        await page.setRequestInterception(true);
+        page.on("request", (req) => {
+            if (["image", "stylesheet", "font", "media"].includes(req.resourceType())) {
+                req.abort();
+            } else {
+                req.continue();
+            }
         });
 
-        await browser.close();
+        await page.goto(instaUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
+
+        const mediaUrl = await page.evaluate(() => {
+            const video = document.querySelector("video");
+            const img = document.querySelector("img");
+            return video ? video.src : img ? img.src : null;
+        });
+
         return mediaUrl ? { mediaUrl } : { error: "Failed to fetch Instagram media" };
     } catch (error) {
         console.error("Instagram Scrape Error:", error);
-        return { error: "Scraping failed" };
+        return { error: "Failed to fetch Instagram media" };
+    } finally {
+        await page.close();
     }
 }
 
-// ✅ Properly export the function
 module.exports = instaScraper;
