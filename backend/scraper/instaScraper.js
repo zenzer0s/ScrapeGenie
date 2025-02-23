@@ -33,11 +33,27 @@ const instaScraper = async (url) => {
             };
         });
 
+        let cleanCaption = data.caption;
+
+        if (!isReel) {
+            // If there are quotes in the caption, extract text between the first pair.
+            const quoteMatch = cleanCaption.match(/"([^"]+)"/);
+            if (quoteMatch && quoteMatch[1]) {
+                cleanCaption = quoteMatch[1].trim();
+            } else {
+                // Fallback: remove any leading text that ends with a colon
+                const colonIndex = cleanCaption.indexOf(':');
+                if (colonIndex !== -1) {
+                    cleanCaption = cleanCaption.substring(colonIndex + 1).trim();
+                }
+            }
+        }
+
         const response = {
             success: true,
             type: 'instagram',
             contentType: isReel ? 'reel' : 'post',
-            caption: data.caption,
+            caption: cleanCaption,
             originalUrl: url
         };
 

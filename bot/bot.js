@@ -120,22 +120,20 @@ bot.on('message', async (msg) => {
 
                 case 'instagram':
                     if (data.contentType === 'reel') {
+                        // For reels, send text message with caption and original link
                         await bot.sendMessage(chatId,
                             `📱 Instagram Reel\n\n` +
                             `${data.caption ? `📝 ${data.caption}\n\n` : ''}` +
                             `🔗 ${data.originalUrl}`
                         );
                     } else {
-                        let message = `📸 Instagram Post\n\n`;
-                        if (data.caption) message += `📝 ${data.caption}\n\n`;
-                        message += `🔗 ${data.originalUrl}`;
-                        
-                        await bot.sendMessage(chatId, message);
-                        
+                        // For posts, send photo with caption and original link in one message.
+                        const messageText = `${data.caption}\n\n🔗 ${data.originalUrl}`;
                         if (data.mediaUrl) {
-                            await bot.sendPhoto(chatId, data.mediaUrl).catch(() => {
-                                console.log('Failed to send Instagram media');
-                            });
+                            await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText });
+                        } else {
+                            // Fallback in case no media URL is available
+                            await bot.sendMessage(chatId, `📸 Instagram Post\n\n${messageText}`);
                         }
                     }
                     break;
