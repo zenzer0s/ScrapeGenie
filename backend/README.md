@@ -1,6 +1,3 @@
-### README for Backend
-
-```markdown
 # ScrapeGenie Backend
 
 This is the backend service for ScrapeGenie. It provides an API for scraping data from various sources (YouTube, Instagram, and general websites) and returns structured metadata that the bot consumes.
@@ -70,16 +67,3 @@ To run tests:
 ```sh
 npm test
 ```
-
-## Additional Recommendations
-
-- **Documentation:**  
-  Consider adding a `README_CONFIG.md` in a dedicated `config/` folder at the project root to explain environment variables.
-- **Code Quality:**  
-  Set up ESLint and Prettier to enforce consistent code style.
-- **Scalability:**  
-  If the backend grows, consider splitting scrapers into submodules or even separate microservices.
-- **Monitoring:**  
-  Integrate basic logging and error monitoring for production use.
-
-Feel free to modify this README to meet your evolving project needs.
