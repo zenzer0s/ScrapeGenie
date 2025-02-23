@@ -99,8 +99,8 @@ bot.on('message', async (msg) => {
             }
             switch (data.type) {
                 case 'youtube': {
-                    // Prepare caption combining title and original URL
-                    const caption = `📺 ${data.title}\n🔗 ${data.originalUrl}`;
+                    // Prepare caption combining title and original URL with an extra newline for spacing.
+                    const caption = `📺 ${data.title}\n\n🔗 ${data.originalUrl}`;
                     if (data.mediaUrl) {
                         try {
                             // Force sending as one message: photo with caption
