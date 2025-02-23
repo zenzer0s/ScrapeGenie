@@ -39,8 +39,11 @@ async function scrapeMetadata(url) {
             if (!description || !description.trim()) {
                 // Select all <p> elements inside .mw-parser-output if available.
                 const paragraphs = Array.from(document.querySelectorAll('.mw-parser-output p'));
-                // Filter out paragraphs that are too short (less than 50 characters)
-                const validParagraphs = paragraphs.filter(p => p.textContent && p.textContent.trim().length > 50);
+                // Filter out paragraphs that are too short or appear to contain inline CSS (e.g. containing "{" or "}")
+                const validParagraphs = paragraphs.filter(p => {
+                    const text = p.textContent ? p.textContent.trim() : "";
+                    return text.length > 50 && !text.includes("{") && !text.includes("}");
+                });
                 if (validParagraphs.length > 0) {
                     description = validParagraphs[0].textContent.trim();
                 }
