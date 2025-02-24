@@ -151,7 +151,8 @@ npm test
 ---
 
 ## **📜 License**
-This project is licensed under the MIT License.
+This project is licensed under the  GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3 License.
 
 ---
 
