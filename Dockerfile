@@ -3,6 +3,19 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app  
 
+# Install dependencies for Puppeteer
+RUN apk add --no-cache \
+    chromium \
+    harfbuzz \
+    ca-certificates \
+    nss \
+    freetype \
+    ttf-freefont \
+    font-noto \
+    font-noto-cjk \
+    font-noto-emoji \
+    font-noto-extra
+
 # Copy package files first (better caching)
 COPY package*.json ./  
 
@@ -19,6 +32,23 @@ RUN npm prune --production
 FROM node:18-alpine  
 
 WORKDIR /app  
+
+# Install Chromium again in the final container
+RUN apk add --no-cache \
+    chromium \
+    harfbuzz \
+    ca-certificates \
+    nss \
+    freetype \
+    ttf-freefont \
+    font-noto \
+    font-noto-cjk \
+    font-noto-emoji \
+    font-noto-extra
+
+# Set Puppeteer environment variables
+ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium-browser"
+ENV PUPPETEER_SKIP_DOWNLOAD="true"
 
 # Copy only necessary files from the builder stage
 COPY --from=builder /app /app  
