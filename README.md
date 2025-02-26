@@ -1,159 +1,208 @@
-### **📜 ScrapeGenie - Smart URL Scraper & Telegram Bot**  
+# **🧞‍♂️ ScrapeGenie - Intelligent URL Scraper & Telegram Bot**
 
-ScrapeGenie is a powerful **URL scraper and Telegram bot** that extracts metadata from **YouTube, Instagram, and general websites**. The backend uses **Puppeteer and Axios** for efficient data scraping, while the bot delivers formatted results with inline actions.
+ScrapeGenie is a powerful **URL scraping system with Telegram integration** that intelligently extracts rich metadata from **YouTube, Instagram, and general websites**. The backend leverages **Puppeteer and Axios** for efficient web scraping, while the Telegram bot delivers beautifully formatted results with interactive inline actions.
 
----
 
 ## **🚀 Features**
-✅ **Scrapes YouTube, Instagram, and Websites** (Extracts titles, captions, images, and links).  
-✅ **Optimized Puppeteer Scraping** (Reuses browser instances to save resources).  
-✅ **Modular and Maintainable Codebase** (Separate logic for backend, bot, and scrapers).  
-✅ **Inline Buttons & Markdown Formatting** for a clean Telegram bot UI.  
-✅ **System Monitoring** (`/usage` command to check memory and CPU usage).  
-✅ **Extensible Design** (Easily add more scrapers for other platforms).  
 
----
+✅ **Multi-Platform Scraping Engine** - Extracts content from YouTube, Instagram, and general websites  
+✅ **Rich Metadata Extraction** - Titles, descriptions, thumbnails, author information, and more  
+✅ **Resource-Optimized Architecture** - Browser instance pooling and reuse for improved performance  
+✅ **Elegant Telegram Interface** - Clean formatting with inline buttons for enhanced user experience  
+✅ **System Health Monitoring** - Track resource usage with the `/usage` command  
+✅ **Extensible Modular Design** - Easily add support for additional platforms  
+✅ **Comprehensive Logging** - Detailed logs for both the bot and server components  
 
 ## **📂 Project Structure**
+
 ```
 ScrapeGenie/
 ├── backend/                # Backend API & Scrapers
 │   ├── routes/             # Express API routes
-│   ├── scraper/            # All scraping modules (YouTube, Instagram, Websites)
-│   ├── tests/              # Unit & integration tests
+│   │   ├── aiRoutes.js     # AI-related routes
+│   │   └── scrape.js       # Scraping endpoints
+│   ├── scraper/            # Specialized scraping modules
+│   │   ├── browserManager.js # Browser instance management
+│   │   ├── helpers.js      # Scraper utility functions
+│   │   ├── instaScraper.js # Instagram-specific scraper
+│   │   ├── metadata.js     # Metadata extraction tools
+│   │   ├── scraper.js      # Core scraping logic
+│   │   └── ytScraper.js    # YouTube-specific scraper
 │   ├── utils/              # Helper functions
-│   ├── server.js           # Main Express server
-│   ├── package.json        # Backend dependencies
-│   └── README.md           # Backend documentation
+│   │   └── helpers.js      # General utility functions
+│   ├── README.md           # Backend documentation
+│   └── server.js           # Main Express server
 │
 ├── bot/                    # Telegram Bot
 │   ├── bot.js              # Bot initialization
 │   ├── commands.js         # Command handlers
-│   ├── messageHandler.js   # URL processing & response formatting
-│   ├── package.json        # Bot dependencies (if separate)
+│   ├── messageHandler.js   # URL processing & formatting
+│   ├── logger.js           # Bot-specific logging
 │   └── README.md           # Bot documentation
 │
+├── logs/                   # Application logs
+│   ├── bot.log             # Telegram bot logs
+│   └── server.log          # Backend server logs
+│
+├── .env                    # Environment configuration
 ├── example.env             # Example environment variables
-├── package.json            # Root dependencies (if unified)
-├── package-lock.json
-├── README.md               # Main documentation (this file)
-└── .gitignore              # Files to exclude from Git
+├── install.sh              # Installation script
+├── package.json            # Project dependencies
+├── LICENSE                 # GNU AGPL v3 License
+└── README.md               # Main documentation
 ```
 
----
+## **⚙️ Installation**
 
-## **⚙️ Setup & Installation**
-### **1️⃣ Clone the Repository**
+### **Automatic Installation**
+
+For a quick setup, use the provided installation script:
+
 ```sh
 git clone <repository-url>
 cd ScrapeGenie
+chmod +x install.sh
+./install.sh
 ```
 
-### **2️⃣ Install Dependencies**
-If you're using a **single package.json at the root**, install all dependencies at once:
-```sh
-npm install
-```
-If the **backend has a separate package.json**, navigate to `backend/` and install:
-```sh
-cd backend
-npm install
-cd ..
-```
-If the **bot has a separate package.json**, navigate to `bot/` and install:
-```sh
-cd bot
-npm install
-cd ..
-```
+### **Manual Installation**
 
----
+1. **Clone the Repository**
+   ```sh
+   git clone <repository-url>
+   cd ScrapeGenie
+   ```
 
-## **📄 Environment Configuration**
-1. Copy the example environment file:
+2. **Install Dependencies**
+   ```sh
+   npm install
+   ```
+
+3. **Configure Environment Variables**
    ```sh
    cp example.env .env
-   ```
-2. Open `.env` and add your configurations:
-   ```env
-   TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-   BACKEND_URL=http://localhost:5000
-   PORT=5000
+   # Edit .env with your configuration
    ```
 
----
+## **🔧 Configuration**
 
-## **🚀 Running the Backend**
-1. Start the backend server:
-   ```sh
-   cd backend
-   npm start
-   ```
-2. The backend should be running at `http://localhost:5000`.
+Open `.env` and configure the following parameters:
 
----
+```env
+# Required Settings
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+PORT=5000
 
-## **🤖 Running the Telegram Bot**
-1. Start the bot:
-   ```sh
-   cd bot
-   node bot.js
-   ```
-2. Your Telegram bot should now be active and responding to commands.
-
----
-
-## **✅ Testing**
-Run backend tests:
-```sh
-cd backend
-npm test
-```
-Run bot tests (if applicable):
-```sh
-cd bot
-npm test
+# Optional Settings
+LOG_LEVEL=info                 # debug, info, warn, error
+MAX_BROWSER_INSTANCES=3        # Number of concurrent browser instances
+SCRAPE_TIMEOUT=30000           # Timeout in milliseconds
+ENABLE_AI_FEATURES=false       # Enable AI-enhanced scraping
 ```
 
+## **🚀 Running the Application**
+
+### **Start the Backend Server**
+
+```sh
+npm run start:server
+# or
+node backend/server.js
+```
+
+### **Start the Telegram Bot**
+
+```sh
+npm run start:bot
+# or
+node bot/bot.js
+```
+
+### **Run Both Components**
+
+```sh
+npm run start
+```
+
+## **📱 Using the Telegram Bot**
+
+1. Start a chat with your bot on Telegram (@YourBotUsername)
+2. Send a URL from YouTube, Instagram, or any website
+3. The bot will extract and display the content in a nicely formatted message
+4. Use the inline buttons to access additional features
+
+### **Available Commands**
+
+- `/start` - Introduction to the bot
+- `/help` - Display available commands
+- `/usage` - Check system resource usage
+- `/about` - Information about ScrapeGenie
+
+## **🧩 API Endpoints**
+
+The backend server exposes the following API endpoints:
+
+- `POST /api/scrape` - Scrape content from a URL
+- `GET /api/status` - Check the server status
+- `POST /api/analyze` - AI-enhanced content analysis (if enabled)
+
+## **🔍 How It Works**
+
+1. When a URL is sent to the bot, it forwards the request to the backend
+2. The backend identifies the URL type and selects the appropriate scraper
+3. Puppeteer or Axios is used to fetch and extract the data
+4. The extracted metadata is formatted and returned to the bot
+5. The bot presents the information in a user-friendly format
+
+## **🔧 Development**
+
+### **Running in Development Mode**
+
+```sh
+npm run dev:server  # Start backend with hot-reload
+npm run dev:bot     # Start bot with hot-reload
+```
+
+### **Testing**
+
+```sh
+npm test
+```
+
+### **Adding a New Scraper**
+
+1. Create a new scraper file in `backend/scraper/`
+2. Implement the scraping logic following the existing patterns
+3. Register the new scraper in `backend/scraper/scraper.js`
+4. Update the URL detection logic in the message handler
+
+## **🚀 Future Enhancements**
+
+- **Additional Platform Support**: Twitter, TikTok, Reddit, Pinterest
+- **Media Download Options**: Direct download for images and videos
+- **Content Summarization**: AI-powered summary of long articles
+- **Search Functionality**: Search for content by keywords
+- **User Preferences**: Customizable output formats and settings
+- **Scheduled Scraping**: Monitor URLs for changes
+- **Batch Processing**: Handle multiple URLs at once
+- **Authentication Support**: Access content behind login walls
+- **Webhook Integration**: Connect with other services
+- **Advanced Caching**: Efficient storage and retrieval of scraped content
+
+## **📄 License**
+
+This project is licensed under the GNU AFFERO GENERAL PUBLIC LICENSE Version 3.
+
+## **🤝 Contributing**
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
 ---
 
-## **🛠️ Development & Contributing**
-### **Folder Structure & Best Practices**
-- Keep scrapers inside `backend/scraper/`.
-- Use `bot/commands.js` for bot commands.
-- Use `bot/messageHandler.js` for handling URLs.
-- Separate helper functions inside `backend/utils/`.
-
-### **Contributions**
-1. **Fork the repository**
-2. **Create a new branch**  
-   ```sh
-   git checkout -b feature-your-feature
-   ```
-3. **Commit your changes**  
-   ```sh
-   git commit -m "Add feature: your-feature"
-   ```
-4. **Push the branch**  
-   ```sh
-   git push origin feature-your-feature
-   ```
-5. **Submit a pull request** 🚀
-
----
-
-## **📖 Future Improvements**
-- **Add More Scrapers**: Twitter, Reddit, and TikTok support.
-- **Improve Caching**: Store recently scraped results for efficiency.
-- **Enhance Bot UI**: Add buttons for advanced actions.
-- **Deploy to Cloud**: Run the bot and backend on a scalable server.
-
----
-
-## **📜 License**
-This project is licensed under the  GNU AFFERO GENERAL PUBLIC LICENSE
-                       Version 3 License.
-
----
-
-### **🎉 Happy Scraping with ScrapeGenie! 🚀**
+**Made with ❤️ by Praveen Zalaki**
