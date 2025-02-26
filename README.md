@@ -2,7 +2,6 @@
 
 ScrapeGenie is a powerful **URL scraping system with Telegram integration** that intelligently extracts rich metadata from **YouTube, Instagram, and general websites**. The backend leverages **Puppeteer and Axios** for efficient web scraping, while the Telegram bot delivers beautifully formatted results with interactive inline actions.
 
-![ScrapeGenie Banner](https://via.placeholder.com/800x200?text=ScrapeGenie)
 
 ## **🚀 Features**
 
