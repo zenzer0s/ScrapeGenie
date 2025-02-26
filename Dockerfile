@@ -53,6 +53,6 @@ ENV PUPPETEER_SKIP_DOWNLOAD="true"
 # Copy only necessary files from the builder stage
 COPY --from=builder /app /app  
 
-EXPOSE 3000  
+EXPOSE 8000  
 
 CMD ["sh", "-c", "node backend/server.js & node bot/bot.js && wait"]
