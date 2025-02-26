@@ -3,19 +3,19 @@ const cors = require("cors");
 const scrapeRoutes = require("./routes/scrape");
 
 const app = express();
-const PORT = 8000;
+const PORT = process.env.PORT || 8000;  // Auto-detect port
 
 app.use(cors());
 app.use(express.json());
 
 // Mount routes with /api prefix
-app.use("/api/scrape", scrapeRoutes);  // Changed from "/scrape" to "/api/scrape"
+app.use("/api/scrape", scrapeRoutes);
 
 app.get("/", (req, res) => {
     res.send("ScrapeGenie API is running...");
 });
 
-// Add health check endpoint
+// Health check endpoint
 app.get("/health", (req, res) => {
     res.json({ status: "healthy" });
 });

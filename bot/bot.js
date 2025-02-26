@@ -12,7 +12,7 @@ const logger = require('./logger');
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 8000}`;
 
 if (!token) {
   console.error("❌ Telegram Bot Token not found! Check your .env file.");
