@@ -5,9 +5,10 @@ const crypto = require('crypto');
 // Directory for storing encrypted session data
 const SESSIONS_DIR = path.join(__dirname, '../../data/sessions');
 
-// Ensure the sessions directory exists
+// Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+  console.log(`Created sessions directory: ${SESSIONS_DIR}`);
 }
 
 // Encryption key (in production, use an environment variable)
@@ -52,13 +53,20 @@ function decrypt(text) {
  * @param {object} sessionData - Session data to store
  */
 function saveSession(userId, sessionData) {
-  const encryptedData = encrypt(sessionData);
-  const filePath = path.join(SESSIONS_DIR, `${userId}.session`);
-  
-  fs.writeFileSync(filePath, encryptedData);
-  console.log(`Session saved for user ${userId}`);
-  
-  return true;
+  try {
+    const filePath = path.join(SESSIONS_DIR, `${userId}.json`);
+    console.log(`Saving session for user ${userId} to ${filePath}`);
+    
+    // Add timestamp for debugging
+    sessionData.lastUpdated = Date.now();
+    
+    fs.writeFileSync(filePath, JSON.stringify(sessionData, null, 2));
+    console.log(`Session saved successfully for user ${userId}`);
+    return true;
+  } catch (error) {
+    console.error(`Error saving session for user ${userId}:`, error);
+    return false;
+  }
 }
 
 /**
@@ -68,12 +76,25 @@ function saveSession(userId, sessionData) {
  */
 function getSession(userId) {
   try {
-    const filePath = path.join(__dirname, '../../data/sessions', `${userId}.json`);
+    const filePath = path.join(SESSIONS_DIR, `${userId}.json`);
+    console.log(`Looking for session file: ${filePath}`);
+    
     if (!fs.existsSync(filePath)) {
+      console.log(`No session file found for user ${userId}`);
       return null;
     }
+    
     const data = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(data);
+    console.log(`Session file found for user ${userId}, size: ${data.length} bytes`);
+    
+    // Basic validation of the session data
+    const sessionData = JSON.parse(data);
+    if (!sessionData || !sessionData.cookies || !Array.isArray(sessionData.cookies)) {
+      console.warn(`Invalid session data for user ${userId}`);
+      return null;
+    }
+    
+    return sessionData;
   } catch (error) {
     console.error(`Error reading session for user ${userId}:`, error);
     return null;
@@ -85,15 +106,22 @@ function getSession(userId) {
  * @param {string} userId - Telegram user ID
  */
 function deleteSession(userId) {
-  const filePath = path.join(SESSIONS_DIR, `${userId}.session`);
-  
-  if (fs.existsSync(filePath)) {
+  try {
+    const filePath = path.join(SESSIONS_DIR, `${userId}.json`);
+    console.log(`Deleting session for user ${userId}`);
+    
+    if (!fs.existsSync(filePath)) {
+      console.log(`No session file found to delete for user ${userId}`);
+      return true;
+    }
+    
     fs.unlinkSync(filePath);
-    console.log(`Session deleted for user ${userId}`);
+    console.log(`Session deleted successfully for user ${userId}`);
     return true;
+  } catch (error) {
+    console.error(`Error deleting session for user ${userId}:`, error);
+    return false;
   }
-  
-  return false;
 }
 
 /**
