@@ -1,6 +1,26 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+// Add debug logging
+console.log("🔍 Directory check:");
+console.log(`• Current directory: ${__dirname}`);
+console.log(`• Project root: ${path.resolve(__dirname, '..')}`);
+
+// Ensure required directories exist
+const fs = require('fs');
+const dirs = [
+  path.resolve(__dirname, '../data'),
+  path.resolve(__dirname, '../data/sessions'),
+  path.resolve(__dirname, '../logs')
+];
+
+dirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created directory: ${dir}`);
+  }
+});
+
 console.log("🔍 Environment check:");
 console.log(`• BACKEND_URL: ${process.env.BACKEND_URL}`);
 console.log(`• PORT: ${process.env.PORT}`);
@@ -14,7 +34,6 @@ if (!process.env.BACKEND_URL) {
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
-const fs = require('fs');
 const { 
   startCommand, 
   helpCommand, 
