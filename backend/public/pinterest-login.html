@@ -1,4 +1,3 @@
-backend/public/pinterest-login.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -108,18 +107,39 @@ backend/public/pinterest-login.html -->
                 // Get the token from URL
                 const token = window.location.pathname.split('/').pop();
                 
+                console.log('Submitting login with token:', token);
                 submitBtn.textContent = 'Logging in...';
                 submitBtn.disabled = true;
                 
                 try {
-                    // For now, just show success
-                    messageDiv.textContent = 'Login successful! You may close this window.';
-                    messageDiv.classList.remove('hidden', 'error');
-                    messageDiv.classList.add('success');
+                    const response = await fetch(`/auth/login/${token}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ username, password })
+                    });
                     
-                    // Hide the form
-                    loginForm.style.display = 'none';
+                    const data = await response.json();
+                    console.log('Login response:', data);
+                    
+                    if (data.success) {
+                        messageDiv.textContent = 'Login successful! You may close this window.';
+                        messageDiv.classList.remove('hidden', 'error');
+                        messageDiv.classList.add('success');
+                        
+                        // Hide the form
+                        loginForm.style.display = 'none';
+                    } else {
+                        messageDiv.textContent = data.error || 'Login failed. Please check your credentials and try again.';
+                        messageDiv.classList.remove('hidden', 'success');
+                        messageDiv.classList.add('error');
+                        
+                        submitBtn.textContent = 'Log In';
+                        submitBtn.disabled = false;
+                    }
                 } catch (error) {
+                    console.error('Login error:', error);
                     messageDiv.textContent = 'Login failed. Please check your credentials and try again.';
                     messageDiv.classList.remove('hidden', 'success');
                     messageDiv.classList.add('error');
