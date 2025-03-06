@@ -64,56 +64,50 @@ router.post('/generate-token', (req, res) => {
   });
 });
 
-// Handle login submission
+// Handle login submission - add better debugging
 router.post('/login/:token', async (req, res) => {
   const { token } = req.params;
   const { username, password } = req.body;
   
-  // Validate the token
+  console.log(`Received login request for token: ${token}`);
+  
   if (!pendingLogins.has(token)) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Invalid or expired token' 
-    });
+    console.log(`Token not found in pendingLogins: ${token}`);
+    return res.status(400).json({ success: false, error: 'Invalid or expired token' });
   }
   
-  // Get the associated user ID
   const { userId } = pendingLogins.get(token);
+  console.log(`Processing login for user: ${userId}`);
   
   try {
-    // Attempt to login to Pinterest
+    console.log(`Attempting to login to Pinterest with username: ${username.substring(0, 3)}***`);
     const loginResult = await loginToPinterest(username, password);
     
-    if (!loginResult.success) {
-      return res.status(401).json({
-        success: false,
-        error: loginResult.error
+    if (loginResult.success) {
+      // Count cookies for debugging
+      console.log(`Login successful! Got ${loginResult.cookies.length} cookies`);
+      
+      // Log cookie names (not values) for debugging
+      const cookieNames = loginResult.cookies.map(c => c.name).join(', ');
+      console.log(`Cookie names: ${cookieNames}`);
+      
+      // Store the session
+      sessionManager.saveSession(userId, {
+        cookies: loginResult.cookies,
+        createdAt: Date.now(),
+        service: 'pinterest'
       });
+      
+      console.log(`Session saved for user ${userId}`);
+      pendingLogins.delete(token);
+      return res.json({ success: true, message: 'Login successful' });
+    } else {
+      console.error(`Login failed: ${loginResult.error}`);
+      return res.status(401).json({ success: false, error: loginResult.error });
     }
-    
-    // Store the session cookies
-    const sessionData = {
-      cookies: loginResult.cookies,
-      createdAt: Date.now(),
-      service: 'pinterest'
-    };
-    
-    sessionManager.saveSession(userId, sessionData);
-    
-    // Remove the used token
-    pendingLogins.delete(token);
-    
-    // Return success
-    return res.json({
-      success: true,
-      message: 'Login successful'
-    });
   } catch (error) {
-    console.error('Auth error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Authentication failed'
-    });
+    console.error('Login error:', error);
+    return res.status(500).json({ success: false, error: 'Authentication failed' });
   }
 });
 
@@ -121,32 +115,26 @@ router.post('/login/:token', async (req, res) => {
 router.get('/status', (req, res) => {
   const { userId } = req.query;
   
+  console.log(`Checking login status for user: ${userId}`);
+  
   if (!userId) {
-    return res.status(400).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID required' });
   }
   
-  // Check if user has a valid session
   const session = sessionManager.getSession(userId);
+  console.log(`Session found: ${!!session}`);
   
-  if (!session) {
-    return res.json({ success: true, isLoggedIn: false });
+  if (session) {
+    console.log(`Session has ${session.cookies ? session.cookies.length : 0} cookies`);
+    console.log(`Session created at: ${new Date(session.createdAt).toISOString()}`);
   }
   
-  // Check if session is expired (consider sessions valid for 30 days)
-  const SESSION_EXPIRY = 30 * 24 * 60 * 60 * 1000; // 30 days
-  const isExpired = Date.now() - session.createdAt > SESSION_EXPIRY;
+  const isLoggedIn = !!session && session.service === 'pinterest' && 
+                    Array.isArray(session.cookies) && session.cookies.length > 0;
   
-  if (isExpired) {
-    // Delete expired session
-    sessionManager.deleteSession(userId);
-    return res.json({ success: true, isLoggedIn: false });
-  }
+  console.log(`Is user logged in: ${isLoggedIn}`);
   
-  return res.json({ 
-    success: true, 
-    isLoggedIn: true,
-    service: session.service
-  });
+  return res.json({ success: true, isLoggedIn });
 });
 
 // Log out (delete session)
