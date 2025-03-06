@@ -70,16 +70,21 @@ async function handleUrlMessage(bot, msg) {
         }
         case 'instagram':
           if (data.contentType === 'reel') {
+            // Clean the caption and remove hashtags
+            const cleanCaption = cleanupInstagramText(data.caption);
+            
             await bot.sendMessage(chatId,
-              `📱 *Instagram Reel*\n\n📝 ${data.caption}\n\n🔗 [View Reel](${data.originalUrl})`,
-              { parse_mode: 'Markdown', reply_markup: keyboard }
+              `📱 <b>Instagram Reel</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${data.originalUrl}">View Reel</a>`,
+              { parse_mode: 'HTML', reply_markup: keyboard }
             );
           } else {
-            const messageText = `📸 *Instagram Post*\n\n📝 ${data.caption}\n\n🔗 [View Post](${data.originalUrl})`;
+            const cleanCaption = cleanupInstagramText(data.caption);
+            const messageText = `📸 <b>Instagram Post</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${data.originalUrl}">View Post</a>`;
+            
             if (data.mediaUrl) {
-              await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText, parse_mode: 'Markdown', reply_markup: keyboard });
+              await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText, parse_mode: 'HTML', reply_markup: keyboard });
             } else {
-              await bot.sendMessage(chatId, messageText, { parse_mode: 'Markdown', reply_markup: keyboard });
+              await bot.sendMessage(chatId, messageText, { parse_mode: 'HTML', reply_markup: keyboard });
             }
           }
           break;
@@ -104,6 +109,38 @@ async function handleUrlMessage(bot, msg) {
       );
     }
   }
+}
+
+function escapeMarkdown(text) {
+  if (!text) return '';
+  
+  // First filter out long hashtags and clean up the text
+  let cleanText = text
+    // Remove hashtags with more than 15 characters
+    .replace(/#[^\s#]{15,}/g, '')
+    // Remove excessive whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+    
+  // Escape only specific Markdown characters that are problematic
+  // Using HTML mode instead as it's more reliable for this case
+  return cleanText;
+}
+
+// Add this new function to your file
+function cleanupInstagramText(text) {
+  if (!text) return '';
+  
+  return text
+    // Remove all hashtags completely
+    .replace(/#\w+/g, '')
+    // Remove excessive line breaks
+    .replace(/\n{3,}/g, '\n\n')
+    // Remove excessive dots
+    .replace(/\.{2,}/g, '...')
+    // Clean up spaces
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 module.exports = { handleUrlMessage };
