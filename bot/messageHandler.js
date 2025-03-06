@@ -1,5 +1,9 @@
 // bot/messageHandler.js
 const axios = require('axios');
+const logger = require('./logger');
+// Fix the import paths
+const pinterestScraper = require('../backend/scraper/pinterestScraper');
+const sessionManager = require('../backend/services/sessionManager');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 
@@ -38,79 +42,61 @@ async function handleUrlMessage(bot, msg) {
     }, 2000);
     
     const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 8000}`;
-    // For Pinterest URLs, pass the userId for session cookies
+    // For Pinterest URLs, use the new scraper
     if (url.includes('pinterest.com') || url.includes('pin.it')) {
       const userId = msg.from.id.toString();
       
       try {
-        // First try with session if available
-        const response = await axios.post(`${BACKEND_URL}/api/scrape`, { 
-          url, 
-          userId 
-        });
+        const cookies = await sessionManager.getSession(userId)?.cookies || [];
+        const result = await pinterestScraper.scrapePinterest(url, cookies);
         
-        clearInterval(timer);
-        await bot.deleteMessage(chatId, processingMsg.message_id);
-        
-        const data = response.data;
-        
-        if (!data.success) {
-          // If authentication required, suggest login
-          if (data.requiresAuthentication) {
-            await bot.sendMessage(chatId, 
-              "⚠️ *This Pinterest content requires login*\n\n" +
-              "Use /pinterest_login to connect your Pinterest account for downloading this content.",
-              { parse_mode: "Markdown" }
-            );
-            return;
-          }
-          
-          throw new Error(data.error || 'Failed to extract Pinterest content');
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to extract Pinterest content');
         }
         
-        // Define keyboard for the message
+        // Create caption with null checks
+        const caption = `📌 *Pinterest Image*\n\n` +
+                       (result.title ? `*${result.title}*\n\n` : '') +
+                       (result.description ? `${result.description.substring(0, 500)}${result.description.length > 500 ? '...' : ''}\n\n` : '') +
+                       (result.creator ? `👤 By: ${result.creator}\n\n` : '') +
+                       `🔗 [View original](${result.originalUrl})`;
+        
+        // Fixed keyboard markup - add required 'url' field
         const keyboard = {
           inline_keyboard: [
-            [{ text: 'View on Pinterest', url: data.originalUrl }]
+            [{
+              text: 'View on Pinterest',
+              url: result.originalUrl // This is required for inline keyboard buttons
+            }]
           ]
         };
         
-        // Handle Pinterest content (photos/videos)
-        if (data.mediaUrl) {
-          const caption = `📌 *Pinterest ${data.contentType}*\n\n` +
-                         (data.title ? `*${data.title}*\n\n` : '') +
-                         (data.description ? `${data.description}\n\n` : '') +
-                         (data.creator ? `👤 By: ${data.creator}\n\n` : '') +
-                         `🔗 [View original](${data.originalUrl})`;
-
-          if (data.contentType === 'video') {
-            await bot.sendVideo(chatId, data.mediaUrl, {
-              caption,
-              parse_mode: 'Markdown',
-              reply_markup: keyboard
-            });
-          } else {
-            await bot.sendPhoto(chatId, data.mediaUrl, {
-              caption,
-              parse_mode: 'Markdown',
-              reply_markup: keyboard
-            });
-          }
-        } else {
-          await bot.sendMessage(chatId, 
-            "❌ Failed to extract media from this Pinterest URL.",
-            { parse_mode: 'Markdown' }
-          );
+        // Send media with proper error handling
+        try {
+          await bot.sendPhoto(chatId, result.mediaUrl, {
+            caption: caption,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
+        } catch (photoError) {
+          console.log('Error sending photo, trying as document:', photoError);
+          await bot.sendDocument(chatId, result.mediaUrl, {
+            caption: caption,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          });
         }
+        
       } catch (error) {
-        console.error('Error processing Pinterest URL:', error);
-        await bot.sendMessage(chatId,
-          '❌ _Failed to extract content from this Pinterest URL._\n\n' +
-          'If this is private content, try using /pinterest_login first.',
+        console.error('Pinterest Error:', error);
+        await bot.sendMessage(
+          chatId,
+          '❌ Sorry, I encountered an error while processing your Pinterest URL.\n' +
+          'Please ensure the link is valid and try again.',
           { parse_mode: 'Markdown' }
         );
       }
-      return; // Return early to avoid processing this URL further
+      return;
     }
     
     // Handle other URLs as before
@@ -167,10 +153,10 @@ async function handleUrlMessage(bot, msg) {
       throw new Error('Unsupported content type');
     }
   } catch (error) {
-    console.error('Error processing URL in messageHandler:', error);
-    await bot.sendMessage(chatId,
-      '❌ _Sorry, I encountered an error while processing your URL._\n' +
-      '_Please ensure the link is valid and try again._',
+    logger.error(`Error handling message: ${error.stack || error}`);
+    await bot.sendMessage(msg.chat.id,
+      '❌ An error occurred while processing your request.\n' +
+      'Please try again later or contact support if the issue persists.',
       { parse_mode: 'Markdown' }
     );
   }
