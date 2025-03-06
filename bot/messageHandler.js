@@ -53,40 +53,50 @@ async function handleUrlMessage(bot, msg) {
         if (!result.success) {
           throw new Error(result.error || 'Failed to extract Pinterest content');
         }
-        
-        // Create caption with null checks
+
+        // Create keyboard markup with URL
+        const keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: '📌 View on Pinterest',
+                url: result.originalUrl || url  // Fallback to original input URL if needed
+              }
+            ]
+          ]
+        };
+
+        // Create caption
         const caption = `📌 *Pinterest Image*\n\n` +
                        (result.title ? `*${result.title}*\n\n` : '') +
                        (result.description ? `${result.description.substring(0, 500)}${result.description.length > 500 ? '...' : ''}\n\n` : '') +
-                       (result.creator ? `👤 By: ${result.creator}\n\n` : '') +
-                       `🔗 [View original](${result.originalUrl})`;
-        
-        // Fixed keyboard markup - add required 'url' field
-        const keyboard = {
-          inline_keyboard: [
-            [{
-              text: 'View on Pinterest',
-              url: result.originalUrl // This is required for inline keyboard buttons
-            }]
-          ]
-        };
-        
-        // Send media with proper error handling
+                       (result.creator ? `👤 By: ${result.creator}\n\n` : '');
+
+        // Debug log
+        console.log('Sending message with:', {
+          mediaUrl: result.mediaUrl,
+          caption,
+          keyboard: JSON.stringify(keyboard)
+        });
+
+        // Send media with error handling
         try {
           await bot.sendPhoto(chatId, result.mediaUrl, {
-            caption: caption,
+            caption,
             parse_mode: 'Markdown',
             reply_markup: keyboard
           });
         } catch (photoError) {
-          console.log('Error sending photo, trying as document:', photoError);
+          console.log('Error sending photo:', photoError.message);
+          
+          // Try sending as document
           await bot.sendDocument(chatId, result.mediaUrl, {
-            caption: caption,
+            caption,
             parse_mode: 'Markdown',
             reply_markup: keyboard
           });
         }
-        
+
       } catch (error) {
         console.error('Pinterest Error:', error);
         await bot.sendMessage(
