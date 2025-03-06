@@ -11,6 +11,12 @@ const router = express.Router();
 router.post('/', async (req, res) => {
     try {
         const { url, userId } = req.body;
+        
+        console.log(`Scrape request received for URL: ${url}`);
+        if (userId) {
+            console.log(`Request includes userID: ${userId}`);
+        }
+
         if (!url) {
             return res.status(400).json({ 
                 success: false, 
@@ -30,16 +36,37 @@ router.post('/', async (req, res) => {
         }
         // Handle Pinterest pins with session if available
         else if (url.includes('pinterest.com') || url.includes('pin.it')) {
-            // Check for user session if userId was provided
+            console.log('Pinterest URL detected, checking for session');
+            
             let cookies = [];
             if (userId) {
                 const session = sessionManager.getSession(userId);
                 if (session && session.service === 'pinterest') {
                     cookies = session.cookies;
+                    console.log(`Found session for user ${userId} with ${cookies.length} cookies`);
+                    
+                    const cookieNames = cookies.map(c => c.name).join(', ');
+                    console.log(`Cookie names: ${cookieNames}`);
+                } else {
+                    console.log(`No valid session found for user ${userId}`);
                 }
             }
             
-            result = await scrapePinterest(url, cookies);
+            try {
+                result = await scrapePinterest(url, cookies);
+                if (!result.success && !cookies.length) {
+                    result.requiresAuthentication = true;
+                }
+            } catch (error) {
+                console.error('Error scraping Pinterest:', error);
+                
+                // Return a proper error response with more details
+                return res.status(400).json({
+                    success: false,
+                    error: `Failed to process Pinterest URL: ${error.message}`,
+                    details: error.stack
+                });
+            }
         }
         // Handle any other URL
         else {
