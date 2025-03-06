@@ -1,7 +1,6 @@
-# **🧞‍♂️ ScrapeGenie - Intelligent URL Scraper & Telegram Bot**
+# **🧞m ScrapeGenie - Intelligent URL Scraper & Telegram Bot**
 
 ScrapeGenie is a powerful **URL scraping system with Telegram integration** that intelligently extracts rich metadata from **YouTube, Instagram, and general websites**. The backend leverages **Puppeteer and Axios** for efficient web scraping, while the Telegram bot delivers beautifully formatted results with interactive inline actions.
-
 
 ## **🚀 Features**
 
@@ -19,8 +18,7 @@ ScrapeGenie is a powerful **URL scraping system with Telegram integration** that
 ScrapeGenie/
 ├── backend/                # Backend API & Scrapers
 │   ├── routes/             # Express API routes
-│   │   ├── aiRoutes.js     # AI-related routes
-│   │   └── scrape.js       # Scraping endpoints
+│   │   ├── scrape.js       # Scraping endpoints
 │   ├── scraper/            # Specialized scraping modules
 │   │   ├── browserManager.js # Browser instance management
 │   │   ├── helpers.js      # Scraper utility functions
@@ -84,7 +82,7 @@ chmod +x install.sh
    # Edit .env with your configuration
    ```
 
-## **🔧 Configuration**
+## **🛠️ Configuration**
 
 Open `.env` and configure the following parameters:
 
@@ -97,7 +95,6 @@ PORT=5000
 LOG_LEVEL=info                 # debug, info, warn, error
 MAX_BROWSER_INSTANCES=3        # Number of concurrent browser instances
 SCRAPE_TIMEOUT=30000           # Timeout in milliseconds
-ENABLE_AI_FEATURES=false       # Enable AI-enhanced scraping
 ```
 
 ## **🚀 Running the Application**
@@ -144,7 +141,6 @@ The backend server exposes the following API endpoints:
 
 - `POST /api/scrape` - Scrape content from a URL
 - `GET /api/status` - Check the server status
-- `POST /api/analyze` - AI-enhanced content analysis (if enabled)
 
 ## **🔍 How It Works**
 
@@ -154,7 +150,7 @@ The backend server exposes the following API endpoints:
 4. The extracted metadata is formatted and returned to the bot
 5. The bot presents the information in a user-friendly format
 
-## **🔧 Development**
+## **🛠️ Development**
 
 ### **Running in Development Mode**
 
@@ -180,7 +176,6 @@ npm test
 
 - **Additional Platform Support**: Twitter, TikTok, Reddit, Pinterest
 - **Media Download Options**: Direct download for images and videos
-- **Content Summarization**: AI-powered summary of long articles
 - **Search Functionality**: Search for content by keywords
 - **User Preferences**: Customizable output formats and settings
 - **Scheduled Scraping**: Monitor URLs for changes
@@ -189,7 +184,7 @@ npm test
 - **Webhook Integration**: Connect with other services
 - **Advanced Caching**: Efficient storage and retrieval of scraped content
 
-## **📄 License**
+## **📝 License**
 
 This project is licensed under the GNU AFFERO GENERAL PUBLIC LICENSE Version 3.
 
@@ -206,3 +201,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ---
 
 **Made with ❤️ by Praveen Zalaki**
+
