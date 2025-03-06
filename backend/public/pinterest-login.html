@@ -1,0 +1,134 @@
+backend/public/pinterest-login.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pinterest Login</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #e60023;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #e60023;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #d50020;
+        }
+        .message {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pinterest Login</h1>
+        <p>Please enter your Pinterest credentials to connect your account.</p>
+        
+        <div id="message" class="message hidden"></div>
+        
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Email or Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            
+            <button type="submit" id="submitBtn">Log In</button>
+        </form>
+        
+        <p><small>Your credentials are used only to authenticate with Pinterest and are not stored.</small></p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('loginForm');
+            const messageDiv = document.getElementById('message');
+            const submitBtn = document.getElementById('submitBtn');
+            
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                
+                // Get the token from URL
+                const token = window.location.pathname.split('/').pop();
+                
+                submitBtn.textContent = 'Logging in...';
+                submitBtn.disabled = true;
+                
+                try {
+                    // For now, just show success
+                    messageDiv.textContent = 'Login successful! You may close this window.';
+                    messageDiv.classList.remove('hidden', 'error');
+                    messageDiv.classList.add('success');
+                    
+                    // Hide the form
+                    loginForm.style.display = 'none';
+                } catch (error) {
+                    messageDiv.textContent = 'Login failed. Please check your credentials and try again.';
+                    messageDiv.classList.remove('hidden', 'success');
+                    messageDiv.classList.add('error');
+                    
+                    submitBtn.textContent = 'Log In';
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
