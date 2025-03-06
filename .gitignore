@@ -6,3 +6,6 @@ backend/logs/
 backend/screenshots/
 project_structure.txt
 logs/
+data / sessions / *.json
+log.log
+data/sessions/2123961513.json
