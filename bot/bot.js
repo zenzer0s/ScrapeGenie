@@ -11,7 +11,8 @@ const fs = require('fs');
 const dirs = [
   path.resolve(__dirname, '../data'),
   path.resolve(__dirname, '../data/sessions'),
-  path.resolve(__dirname, '../logs')
+  path.resolve(__dirname, '../logs'),
+  path.resolve(__dirname, '../downloads')
 ];
 
 dirs.forEach(dir => {
@@ -31,7 +32,9 @@ if (!process.env.BACKEND_URL) {
   console.log(`• BACKEND_URL (default): ${process.env.BACKEND_URL}`);
 }
 
+// Import libraries for both bot frameworks
 const TelegramBot = require('node-telegram-bot-api');
+const { Telegraf } = require("telegraf");
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const { 
@@ -39,14 +42,14 @@ const {
   helpCommand, 
   statusCommand, 
   usageCommand,
-  pinterestLoginCommand,  // Imported from commands.js
-  pinterestLogoutCommand, // Imported from commands.js
-  pinterestStatusCommand  // Imported from commands.js
+  pinterestLoginCommand,
+  pinterestLogoutCommand,
+  pinterestStatusCommand
 } = require('./commands');
-const { handleUrlMessage } = require('./messageHandler');
+const { handleUrlMessage, handleMessage } = require('./messageHandler');
 const logger = require('./logger');
 
-// Set up Axios to retry failed requests (e.g., ECONNRESET)
+// Set up Axios to retry failed requests
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -58,33 +61,82 @@ if (!token) {
   process.exit(1);
 }
 
-const bot = new TelegramBot(token, { polling: true });
+// Check if we should use the Telegraf implementation or the traditional one
+const USE_TELEGRAF = process.env.USE_TELEGRAF === 'true';
 
-// Register command handlers
-bot.onText(/\/start/, (msg) => startCommand(bot, msg));
-bot.onText(/\/help/, (msg) => helpCommand(bot, msg));
-bot.onText(/\/status/, (msg) => statusCommand(bot, msg, checkBackendStatus));
-bot.onText(/\/usage/, (msg) => usageCommand(bot, msg));
-
-// Register Pinterest command handlers
-bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
-bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
-bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
-
-// Handle Pinterest login with token
-bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
-  const token = match[1];
-  const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
+if (USE_TELEGRAF) {
+  // ===== TELEGRAF IMPLEMENTATION =====
+  console.log("🔄 Using Telegraf implementation");
   
-  // Verify token and redirect to login page
-  // ...
-});
-
-// Delegate URL message processing to messageHandler.js
-bot.on('message', async (msg) => {
-  await handleUrlMessage(bot, msg);
-});
+  const telegrafBot = new Telegraf(token);
+  
+  // Handle basic commands
+  telegrafBot.start((ctx) => ctx.reply("Welcome! Send me a URL to download content"));
+  telegrafBot.help((ctx) => ctx.reply("Just send me a URL, and I'll download the content for you"));
+  telegrafBot.command('status', async (ctx) => {
+    const isBackendRunning = await checkBackendStatus();
+    const statusMessage = isBackendRunning 
+      ? "✅ Backend service is running." 
+      : "❌ Backend service is not responding.";
+    ctx.reply(statusMessage);
+  });
+  
+  // Handle text messages (URLs)
+  telegrafBot.on("text", async (ctx) => {
+    const messageText = ctx.message.text;
+    if (messageText.startsWith("http")) {
+      await handleMessage(ctx);
+    }
+  });
+  
+  // Error handling
+  telegrafBot.catch((err, ctx) => {
+    logger.error(`Telegraf error for ${ctx.updateType}`, err);
+    console.error(`Telegraf error for ${ctx.updateType}:`, err);
+  });
+  
+  // Start the bot
+  telegrafBot.launch();
+  console.log("🤖 Telegraf bot is running...");
+  
+  // Enable graceful stop
+  process.once('SIGINT', () => telegrafBot.stop('SIGINT'));
+  process.once('SIGTERM', () => telegrafBot.stop('SIGTERM'));
+  
+} else {
+  // ===== NODE-TELEGRAM-BOT-API IMPLEMENTATION =====
+  console.log("🔄 Using node-telegram-bot-api implementation");
+  
+  const bot = new TelegramBot(token, { polling: true });
+  
+  // Register command handlers
+  bot.onText(/\/start/, (msg) => startCommand(bot, msg));
+  bot.onText(/\/help/, (msg) => helpCommand(bot, msg));
+  bot.onText(/\/status/, (msg) => statusCommand(bot, msg, checkBackendStatus));
+  bot.onText(/\/usage/, (msg) => usageCommand(bot, msg));
+  
+  // Register Pinterest command handlers
+  bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
+  bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
+  bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
+  
+  // Handle Pinterest login with token
+  bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
+    const token = match[1];
+    const chatId = msg.chat.id;
+    const userId = msg.from.id.toString();
+    
+    // Verify token and redirect to login page
+    // ...
+  });
+  
+  // Delegate URL message processing to messageHandler.js
+  bot.on('message', async (msg) => {
+    await handleUrlMessage(bot, msg);
+  });
+  
+  console.log("🚀 Bot is running...");
+}
 
 // Check backend status function
 async function checkBackendStatus() {
@@ -97,8 +149,6 @@ async function checkBackendStatus() {
     return false;
   }
 }
-
-console.log("🚀 Bot is running...");
 
 // Auto clean bot-error.log every 5 minutes
 const logFilePath = path.join(__dirname, 'bot-error.log');
