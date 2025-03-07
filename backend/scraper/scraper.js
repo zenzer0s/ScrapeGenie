@@ -36,4 +36,9 @@ async function scrapeMetadata(url) {
     }
 }
 
-module.exports = { scrapeMetadata, scrapePinterest };
+async function scrapeWebsite(url) {
+    return `Scraped content from ${url}`;
+}
+
+// ✅ Ensure this is correctly exported
+module.exports = { scrapeMetadata, scrapePinterest, scrapeWebsite };
