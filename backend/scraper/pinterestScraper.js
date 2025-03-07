@@ -107,7 +107,22 @@ async function scrapePinterest(url, userId) {
   const browser = await puppeteer.launch({
     headless: "new",
     defaultViewport: { width: 1280, height: 900 },
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection',
+      '--disable-renderer-backgrounding'
+    ]
   });
   console.log(`⏱️ Browser launch: ${formatTime(Date.now() - browserStartTime)}`);
   
@@ -141,11 +156,38 @@ async function scrapePinterest(url, userId) {
     console.log('📍 Navigating to pin...');
     const pinNavigateTime = Date.now();
     await page.goto(url, { 
-      waitUntil: 'networkidle0',
+      waitUntil: 'networkidle2', // Change from 'domcontentloaded' to 'networkidle2'
       timeout: CONFIG.loadTimeout 
     });
     console.log(`⏱️ Pin page load: ${formatTime(Date.now() - pinNavigateTime)}`);
     
+    // Wait for specific Pinterest elements to load
+    // Add this after navigation
+    try {
+      await page.waitForSelector('img[srcset]', { timeout: 5000 });
+    } catch (error) {
+      console.log('Waiting for images timed out, continuing anyway');
+    }
+
+    // Modify the request interception to be less aggressive
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      const url = req.url();
+      
+      if (url.includes('pinimg.com') || // Always allow Pinterest image CDN
+          resourceType === 'document' || 
+          resourceType === 'xhr' || 
+          resourceType === 'fetch' ||
+          resourceType === 'script' || // Allow scripts to run
+          resourceType === 'image') {
+        req.continue();
+      } else {
+        // Block only non-essential resources
+        req.abort();
+      }
+    });
+
     // Initial scroll to trigger lazy loading
     const scrollStartTime = Date.now();
     await scrollToLoadImages(page);
