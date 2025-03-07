@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const sessionManager = require('../services/sessionManager');
-const { loginToPinterest } = require('../scraper/pinterestScraper');
+const { loginToPinterest } = require('../scraper/pinterestScraper'); // Ensure this import is correct
 
 const router = express.Router();
 
