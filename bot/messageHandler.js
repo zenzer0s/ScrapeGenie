@@ -4,6 +4,9 @@ const logger = require('./logger');
 // Fix the import paths
 const pinterestScraper = require('../backend/scraper/pinterestScraper');
 const sessionManager = require('../backend/services/sessionManager');
+const { scrapeContent } = require("../backend/scraper/scraperManager");
+const fs = require("fs");
+const path = require("path");
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 
@@ -153,6 +156,54 @@ async function handleUrlMessage(bot, msg) {
   } // Make sure this closing brace for the catch exists
 } // And this closing brace for the function exists
 
+async function handleMessage(ctx) {
+    const text = ctx.message.text;
+
+    if (!text || !text.startsWith("http")) {
+        return; // Ignore messages that are not URLs
+    }
+
+    ctx.reply("🔄 Downloading...");
+
+    try {
+        const result = await scrapeContent(text);
+
+        // Check if it's an Instagram post (Instaloader saves files in downloads/)
+        const downloadFolder = path.join(__dirname, "../downloads");
+        const files = fs.readdirSync(downloadFolder).map(f => path.join(downloadFolder, f));
+
+        if (files.length === 0) {
+            return ctx.reply("❌ No file found. Something went wrong.");
+        }
+
+        let sentMedia = false; // Track if at least one media file is sent
+
+        // Send downloaded files (photo/video)
+        for (const file of files) {
+            if (file.endsWith(".mp4")) {
+                await ctx.replyWithVideo({ source: file });
+                sentMedia = true;
+            } else if (file.endsWith(".jpg") || file.endsWith(".png")) {
+                await ctx.replyWithPhoto({ source: file });
+                sentMedia = true;
+            }
+        }
+
+        if (!sentMedia) {
+            return ctx.reply("❌ No media found. Please check if the link is correct.");
+        }
+
+        // Cleanup (optional)
+        setTimeout(() => {
+            files.forEach(file => fs.unlinkSync(file));
+        }, 10000); // Wait 10 seconds before deleting files
+
+    } catch (error) {
+        console.error("❌ Failed to download:", error);
+        ctx.reply("❌ Download failed. Please try again.");
+    }
+}
+
 function escapeMarkdown(text) {
   if (!text) return '';
   
@@ -185,4 +236,4 @@ function cleanupInstagramText(text) {
     .trim();
 }
 
-module.exports = { handleUrlMessage };
+module.exports = { handleUrlMessage, handleMessage };
