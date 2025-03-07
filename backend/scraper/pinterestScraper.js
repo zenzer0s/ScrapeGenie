@@ -268,16 +268,6 @@ async function scrapePinterest(url, userId) {
     const finalUrl = (improvement > 0) ? enhancedUrl : imageData.url;
     console.log(`\n✨ Using ${improvement > 0 ? 'enhanced' : 'original'} URL`);
     
-    // Get additional pin metadata
-    const pinData = await page.evaluate(() => {
-      return {
-        title: document.querySelector('meta[property="og:title"]')?.content || 
-               document.title.replace(' | Pinterest', ''),
-        description: document.querySelector('meta[property="og:description"]')?.content || '',
-        creator: document.querySelector('[data-test-id="pin-creator"]')?.textContent?.trim() || ''
-      };
-    });
-    
     await browser.close();
     
     return {
