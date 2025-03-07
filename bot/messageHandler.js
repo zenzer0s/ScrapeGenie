@@ -47,11 +47,10 @@ async function handleUrlMessage(bot, msg) {
       const userId = msg.from.id.toString();
       
       try {
-        const cookies = await sessionManager.getSession(userId)?.cookies || [];
-        const result = await pinterestScraper.scrapePinterest(url, cookies);
+        const result = await pinterestScraper.scrapePinterest(url, userId);
         
         if (!result.success) {
-          throw new Error(result.error || 'Failed to extract Pinterest content');
+          throw new Error(result.error || 'Failed to scrape Pinterest data');
         }
 
         // Create keyboard markup with URL
@@ -60,43 +59,20 @@ async function handleUrlMessage(bot, msg) {
             [
               {
                 text: '📌 View on Pinterest',
-                url: result.originalUrl || url  // Fallback to original input URL if needed
+                url: result.originalUrl || url
               }
             ]
           ]
         };
 
-        // Create caption
-        const caption = `📌 *Pinterest Image*\n\n` +
-                       (result.title ? `*${result.title}*\n\n` : '') +
-                       (result.description ? `${result.description.substring(0, 500)}${result.description.length > 500 ? '...' : ''}\n\n` : '') +
-                       (result.creator ? `👤 By: ${result.creator}\n\n` : '');
-
-        // Debug log
-        console.log('Sending message with:', {
-          mediaUrl: result.mediaUrl,
-          caption,
-          keyboard: JSON.stringify(keyboard)
+        // Remove all caption code and send the image without any caption
+        await bot.sendPhoto(chatId, result.mediaUrl, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
         });
-
-        // Send media with error handling
-        try {
-          await bot.sendPhoto(chatId, result.mediaUrl, {
-            caption,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
-          });
-        } catch (photoError) {
-          console.log('Error sending photo:', photoError.message);
-          
-          // Try sending as document
-          await bot.sendDocument(chatId, result.mediaUrl, {
-            caption,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
-          });
-        }
-
+        
+        clearInterval(timer);
+        await bot.deleteMessage(chatId, processingMsg.message_id);
       } catch (error) {
         console.error('Pinterest Error:', error);
         await bot.sendMessage(
@@ -120,6 +96,17 @@ async function handleUrlMessage(bot, msg) {
     if (!data.success) {
       throw new Error(data.error || 'Failed to scrape data');
     }
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: '🔗 View Original',
+            url: data.originalUrl || url
+          }
+        ]
+      ]
+    };
 
     // Process based on content type
     if (data.type === 'youtube') {
@@ -151,26 +138,17 @@ async function handleUrlMessage(bot, msg) {
           await bot.sendMessage(chatId, messageText, { parse_mode: 'HTML', reply_markup: keyboard });
         }
       }
-    } else if (data.type === 'website') {
-      // Handle website content
-      const messageText = `🌍 *${data.title}*\n\n📝 ${data.description}\n\n🔗 [Read More](${data.originalUrl})`;
-      if (data.mediaUrl) {
-        await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText, parse_mode: 'Markdown', reply_markup: keyboard });
-      } else {
-        await bot.sendMessage(chatId, messageText, { parse_mode: 'Markdown', reply_markup: keyboard });
-      }
-    } else {
-      throw new Error('Unsupported content type');
     }
   } catch (error) {
+    // Make sure this catch block is properly closed
     logger.error(`Error handling message: ${error.stack || error}`);
     await bot.sendMessage(msg.chat.id,
       '❌ An error occurred while processing your request.\n' +
       'Please try again later or contact support if the issue persists.',
       { parse_mode: 'Markdown' }
     );
-  }
-}
+  } // Make sure this closing brace for the catch exists
+} // And this closing brace for the function exists
 
 function escapeMarkdown(text) {
   if (!text) return '';
