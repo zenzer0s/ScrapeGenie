@@ -273,11 +273,10 @@ async function scrapePinterest(url, userId) {
     return {
       success: true,
       type: 'pinterest',
-      title: pinData.title,
-      description: pinData.description,
+     
       mediaUrl: finalUrl,
       contentType: 'image',
-      creator: pinData.creator,
+     
       originalUrl: url,
       dimensions: {
         width: imageData.width,
