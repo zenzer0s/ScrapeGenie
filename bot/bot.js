@@ -71,7 +71,7 @@ bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
 bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
 bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
 
-// In your bot.js
+// Handle Pinterest login with token
 bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
   const token = match[1];
   const chatId = msg.chat.id;
