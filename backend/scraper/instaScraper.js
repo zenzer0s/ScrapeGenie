@@ -1,5 +1,7 @@
 // instaScraper.js
 const getBrowser = require('./browserManager');
+const { exec } = require("child_process");
+const path = require("path");
 
 const instaScraper = async (url) => {
   if (!url.includes('instagram.com')) {
@@ -128,4 +130,33 @@ const instaScraper = async (url) => {
   }
 };
 
-module.exports = instaScraper;
+async function fetchInstagramPost(url) {
+    return new Promise((resolve, reject) => {
+        const scriptPath = path.join(__dirname, "instaDownloader.py");
+
+        console.log("🟢 fetchInstagramPost() called");
+        console.log(`📌 URL Received: ${url}`);
+        console.log(`📂 Expected Script Path: ${scriptPath}`);
+
+        const command = `python3 ${scriptPath} "${url}"`;
+        console.log(`🚀 Running command: ${command}`);
+
+        exec(command, (error, stdout, stderr) => {
+            console.log("🔄 Instaloader process finished");
+
+            if (error) {
+                console.error(`❌ Instaloader Error: ${stderr}`);
+                return reject(new Error(stderr));
+            }
+
+            console.log(`✅ Instaloader Success:\n${stdout}`);
+            resolve(stdout.trim());
+        });
+    });
+}
+
+// Make sure the function is properly exported
+module.exports = {
+  instaScraper,
+  fetchInstagramPost
+};
