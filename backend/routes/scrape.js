@@ -2,7 +2,7 @@
 const express = require('express');
 const ytScraper = require('../scraper/ytScraper');
 const instaScraper = require('../scraper/instaScraper');
-const { scrapePinterest } = require('../scraper/pinterestScraper');
+const { scrapePinterest } = require('../scraper/scraper'); // Import the scrapePinterest function
 const { scrapeMetadata } = require('../scraper/metadata');
 const sessionManager = require('../services/sessionManager');
 
@@ -53,7 +53,7 @@ router.post('/', async (req, res) => {
             }
             
             try {
-                result = await scrapePinterest(url, cookies);
+                result = await scrapePinterest(url, userId);
                 if (!result.success && !cookies.length) {
                     result.requiresAuthentication = true;
                 }
@@ -85,6 +85,25 @@ router.post('/', async (req, res) => {
             error: "Failed to scrape data" 
         });
     }
+});
+
+router.post('/pinterest', async (req, res) => {
+  const { url, userId } = req.body;
+  
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'URL is required' });
+  }
+  
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'User ID is required' });
+  }
+  
+  try {
+    const result = await scrapePinterest(url, userId);
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 module.exports = router;
