@@ -64,4 +64,8 @@ async function ytScraper(videoUrl) {
     }
 }
 
-module.exports = ytScraper;
+async function scrapeYouTube(url) {
+    return await ytScraper(url);
+}
+
+module.exports = { scrapeYouTube }; // ✅ Ensure this is correctly exported
