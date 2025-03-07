@@ -10,3 +10,4 @@ data / sessions / *.json
 log.log
 data/sessions/2123961513.json
 bot/bot-error.log
+data/
