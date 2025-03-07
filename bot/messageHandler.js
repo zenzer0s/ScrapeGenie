@@ -65,7 +65,10 @@ async function handleUrlMessage(bot, msg) {
           ]
         };
 
-        // Remove all caption code and send the image without any caption
+        // Add this right before sending the photo
+        console.log(`🔄 Sending image to Telegram: ${result.mediaUrl}`);
+
+        // Then the existing code
         await bot.sendPhoto(chatId, result.mediaUrl, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
