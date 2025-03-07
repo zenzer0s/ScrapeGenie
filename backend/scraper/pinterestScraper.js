@@ -39,6 +39,9 @@ async function scrollToLoadImages(page) {
   await delay(CONFIG.scrollDelay);
 }
 
+// Add this helper function at the top of the file, after the other helper functions
+const formatTime = ms => (ms / 1000).toFixed(2) + 's';
+
 // Update the quality check function to handle errors better
 async function checkImageQuality(url) {
   try {
@@ -77,6 +80,10 @@ async function checkImageQuality(url) {
 
 // Update the scrapePinterest function to use the session correctly
 async function scrapePinterest(url, userId) {
+  // Start timing
+  const startTime = Date.now();
+  console.log(`\n⏱️ Starting Pinterest scrape for: ${url}`);
+  
   // Ensure userId is a string
   if (typeof userId !== 'string') {
     console.error('Invalid userId:', userId);
@@ -96,13 +103,16 @@ async function scrapePinterest(url, userId) {
     };
   }
   
+  const browserStartTime = Date.now();
   const browser = await puppeteer.launch({
     headless: "new",
     defaultViewport: { width: 1280, height: 900 },
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
+  console.log(`⏱️ Browser launch: ${formatTime(Date.now() - browserStartTime)}`);
   
   try {
+    const pageStartTime = Date.now();
     const page = await browser.newPage();
     
     // Set cookies
@@ -114,7 +124,9 @@ async function scrapePinterest(url, userId) {
     }
     
     // Navigate to Pinterest first to set localStorage
+    const loginStartTime = Date.now();
     await page.goto('https://www.pinterest.com', { waitUntil: 'domcontentloaded' });
+    console.log(`⏱️ Pinterest homepage load: ${formatTime(Date.now() - loginStartTime)}`);
     
     // Set localStorage if available
     if (session.localStorage) {
@@ -127,15 +139,20 @@ async function scrapePinterest(url, userId) {
     
     // Navigate to the Pinterest pin URL
     console.log('📍 Navigating to pin...');
+    const pinNavigateTime = Date.now();
     await page.goto(url, { 
       waitUntil: 'networkidle0',
       timeout: CONFIG.loadTimeout 
     });
+    console.log(`⏱️ Pin page load: ${formatTime(Date.now() - pinNavigateTime)}`);
     
     // Initial scroll to trigger lazy loading
+    const scrollStartTime = Date.now();
     await scrollToLoadImages(page);
+    console.log(`⏱️ Scroll operation: ${formatTime(Date.now() - scrollStartTime)}`);
     
     // Try to find the image with retries
+    const imageSearchTime = Date.now();
     console.log('🔍 Searching for pin image...');
     const imageData = await page.evaluate((config) => {
       function isValidImage(img) {
@@ -212,6 +229,7 @@ async function scrapePinterest(url, userId) {
       
       return allImages[0] || null;
     }, CONFIG);
+    console.log(`⏱️ Image search: ${formatTime(Date.now() - imageSearchTime)}`);
     
     if (!imageData) {
       throw new Error('Could not find valid pin image');
@@ -270,13 +288,14 @@ async function scrapePinterest(url, userId) {
     
     await browser.close();
     
+    // Add final timing log before returning
+    console.log(`\n⏱️ Total processing time: ${formatTime(Date.now() - startTime)}`);
+    
     return {
       success: true,
       type: 'pinterest',
-     
       mediaUrl: finalUrl,
       contentType: 'image',
-     
       originalUrl: url,
       dimensions: {
         width: imageData.width,
@@ -286,11 +305,15 @@ async function scrapePinterest(url, userId) {
         original: originalQuality,
         enhanced: enhancedQuality,
         improvement: `${improvement}%`
+      },
+      performance: {
+        totalTime: formatTime(Date.now() - startTime)
       }
     };
     
   } catch (error) {
     console.error('Pinterest Scraper Error:', error);
+    console.log(`⏱️ Failed after: ${formatTime(Date.now() - startTime)}`);
     if (browser) await browser.close();
     return { 
       success: false, 
