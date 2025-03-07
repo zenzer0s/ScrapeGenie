@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pinterest Login</title>
+    <title>Connect Pinterest</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 500px;
             margin: 0 auto;
             padding: 20px;
+            background-color: #f5f5f5;
         }
         .container {
             background-color: #fff;
@@ -21,6 +22,13 @@
             color: #e60023;
             text-align: center;
         }
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo img {
+            max-width: 120px;
+        }
         .form-group {
             margin-bottom: 15px;
         }
@@ -31,28 +39,35 @@
         }
         input {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
             box-sizing: border-box;
+            font-size: 16px;
         }
         button {
             background-color: #e60023;
             color: white;
             border: none;
-            padding: 12px 20px;
+            padding: 14px 20px;
             border-radius: 4px;
             cursor: pointer;
             width: 100%;
             font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
         }
         button:hover {
             background-color: #d50020;
         }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
         .message {
             text-align: center;
             margin: 15px 0;
-            padding: 10px;
+            padding: 12px;
             border-radius: 4px;
         }
         .success {
@@ -66,30 +81,65 @@
         .hidden {
             display: none;
         }
+        .security-info {
+            margin-top: 20px;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        .security-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Pinterest Login</h1>
-        <p>Please enter your Pinterest credentials to connect your account.</p>
+        <div class="logo">
+            <svg viewBox="0 0 24 24" width="100" height="100" fill="#e60023">
+                <path d="M12 0a12 12 0 0 0-4.37 23.17c-.09-.78-.19-2 .03-2.88.2-.78 1.3-5 1.3-5s-.33-.67-.33-1.66c0-1.56.9-2.73 2.02-2.73.96 0 1.42.72 1.42 1.58 0 .96-.61 2.4-.93 3.74-.26 1.11.56 2.02 1.65 2.02 1.98 0 3.5-2.09 3.5-5.12 0-2.68-1.93-4.54-4.69-4.54-3.2 0-5.07 2.4-5.07 4.88 0 .97.37 2 .84 2.56.09.11.1.2.08.31-.08.35-.28 1.1-.32 1.26-.05.2-.17.25-.38.15-1.42-.66-2.31-2.72-2.31-4.4 0-3.54 2.56-6.77 7.4-6.77 3.87 0 6.87 2.76 6.87 6.45 0 3.84-2.41 6.95-5.75 6.95-1.12 0-2.17-.58-2.53-1.27 0 0-.56 2.12-.69 2.63-.25.96-.94 2.17-1.4 2.91A12 12 0 1 0 12 0z"/>
+            </svg>
+        </div>
+        <h1>Connect to Pinterest</h1>
+        <p style="text-align: center;">Enter your Pinterest account credentials to enable image downloading</p>
         
         <div id="message" class="message hidden"></div>
         
         <form id="loginForm">
             <div class="form-group">
                 <label for="username">Email or Username</label>
-                <input type="text" id="username" name="username" required>
+                <input type="text" id="username" name="username" required autocomplete="email" placeholder="Enter your email or username">
             </div>
             
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" required placeholder="Enter your password">
             </div>
             
-            <button type="submit" id="submitBtn">Log In</button>
+            <button type="submit" id="submitBtn">Connect Pinterest Account</button>
         </form>
         
-        <p><small>Your credentials are used only to authenticate with Pinterest and are not stored.</small></p>
+        <div class="security-info">
+            <div class="security-title">Security Information</div>
+            <p>• Your credentials are used only to connect with Pinterest</p>
+            <p>• We never store your password on our servers</p>
+            <p>• Only session cookies are stored for authentication</p>
+        </div>
     </div>
 
     <script>
@@ -107,8 +157,7 @@
                 // Get the token from URL
                 const token = window.location.pathname.split('/').pop();
                 
-                console.log('Submitting login with token:', token);
-                submitBtn.textContent = 'Logging in...';
+                submitBtn.innerHTML = '<span class="loading"></span>Connecting...';
                 submitBtn.disabled = true;
                 
                 try {
@@ -121,30 +170,34 @@
                     });
                     
                     const data = await response.json();
-                    console.log('Login response:', data);
                     
                     if (data.success) {
-                        messageDiv.textContent = 'Login successful! You may close this window.';
+                        messageDiv.textContent = '✅ Pinterest connected successfully! You can close this window.';
                         messageDiv.classList.remove('hidden', 'error');
                         messageDiv.classList.add('success');
                         
                         // Hide the form
                         loginForm.style.display = 'none';
+                        
+                        // Notify parent window if this was opened in a popup
+                        if (window.opener) {
+                            window.opener.postMessage({ type: 'pinterest_connected', success: true }, '*');
+                        }
                     } else {
-                        messageDiv.textContent = data.error || 'Login failed. Please check your credentials and try again.';
+                        messageDiv.textContent = data.error || 'Connection failed. Please check your credentials and try again.';
                         messageDiv.classList.remove('hidden', 'success');
                         messageDiv.classList.add('error');
                         
-                        submitBtn.textContent = 'Log In';
+                        submitBtn.innerHTML = 'Connect Pinterest Account';
                         submitBtn.disabled = false;
                     }
                 } catch (error) {
                     console.error('Login error:', error);
-                    messageDiv.textContent = 'Login failed. Please check your credentials and try again.';
+                    messageDiv.textContent = 'Connection failed. Please try again later.';
                     messageDiv.classList.remove('hidden', 'success');
                     messageDiv.classList.add('error');
                     
-                    submitBtn.textContent = 'Log In';
+                    submitBtn.innerHTML = 'Connect Pinterest Account';
                     submitBtn.disabled = false;
                 }
             });

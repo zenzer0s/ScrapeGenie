@@ -30,7 +30,7 @@ async function promptCredentials() {
  * @param {string} outputPath - Path to save the session data (default: 'data/session.json')
  * @param {boolean} headless - Whether to run the browser in headless mode (default: false)
  */
-async function captureAuthSession(email, password, outputPath = 'data/session.json', headless = false) {
+async function captureAuthSession(email, password, outputPath = 'data/session.json', headless = true) {
   const log = (message, type = 'info') => {
     const timestamp = new Date().toISOString();
     const prefix = {
@@ -46,65 +46,80 @@ async function captureAuthSession(email, password, outputPath = 'data/session.js
 
   log('Starting Pinterest authentication process...', 'info');
   
-  // Launch browser with appropriate settings
-  log('Launching browser...', 'info');
+  // Launch browser with optimized settings
   const browser = await puppeteer.launch({
-    headless: headless, // Use the headless parameter
-    defaultViewport: null,
-    args: ['--window-size=1280,800', '--disable-notifications']
+    headless: "new", // Use the new headless mode for better performance
+    defaultViewport: { width: 1280, height: 800 },
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-breakpad',
+      '--disable-component-extensions-with-background-pages',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection',
+      '--disable-renderer-backgrounding',
+      '--disable-notifications'
+    ]
+  });
+
+  const page = await browser.newPage();
+  
+  // Block unnecessary resources
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const resourceType = req.resourceType();
+    // Only allow essential resources
+    if (['document', 'xhr', 'fetch', 'script'].includes(resourceType) || 
+        req.url().includes('pinterest.com')) {
+      req.continue();
+    } else {
+      req.abort();
+    }
   });
 
   try {
-    // Create a new page and configure it
-    const page = await browser.newPage();
-    
-    // Ignore specific error messages for cleaner logs
-    page.on('requestfailed', request => {
-      // We'll ignore all the failed network requests because they're not critical
-      // and can clutter the logs
-    });
-    
     // Navigate to Pinterest login page
     log('Navigating to Pinterest login page...', 'info');
     await page.goto('https://www.pinterest.com/login/', {
       waitUntil: 'networkidle2',
-      timeout: 60000
+      timeout: 30000 // Reduce timeout
     });
 
-    // Wait for login form and enter credentials
-    try {
-      // Email input
-      log('Entering login credentials...', 'info');
-      await page.waitForSelector('input[type="email"]', { timeout: 10000 });
-      await page.type('input[type="email"]', email, { delay: 50 });
-      
-      // Password input
-      await page.waitForSelector('input[type="password"]', { timeout: 10000 });
-      await page.type('input[type="password"]', password, { delay: 50 });
-      
-      // Click login button
-      log('Submitting login...', 'info');
-      await Promise.all([
-        page.click('button[type="submit"]'),
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {
-          // Silently handle navigation issues
-        })
-      ]);
-      
-    } catch (formError) {
-      log(`Error interacting with login form: ${formError.message}`, 'error');
-      throw formError;
-    }
+    // Fill login form
+    log('Entering login credentials...', 'info');
+    await page.waitForSelector('#email', { visible: true });
+    await page.type('#email', email);
+    await page.type('#password', password);
     
-    // Check if login was successful
-    const currentUrl = page.url();
-    
-    if (currentUrl.includes('pinterest.com/login') || currentUrl.includes('error')) {
+    // Click login button
+    log('Submitting login...', 'info');
+    await Promise.all([
+      page.click('button[type="submit"]'),
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 })
+    ]);
+
+    // Check for login errors
+    const loginFailed = await page.evaluate(() => {
+      return document.body.innerText.includes('The password you entered is incorrect') ||
+             document.body.innerText.includes('Email not found') ||
+             document.body.innerText.includes('Hmm...that password isn\'t right');
+    });
+
+    if (loginFailed) {
       log('Login failed. Please check your credentials.', 'error');
       await browser.close();
-      return false;
+      return { 
+        success: false, 
+        error: 'Invalid credentials. Please check your email and password.'
+      };
     }
-    
+
     log('Login successful!', 'success');
     
     // Check for two-factor authentication
@@ -191,7 +206,11 @@ async function captureAuthSession(email, password, outputPath = 'data/session.js
     return true;
   } catch (error) {
     log(`Error during authentication process: ${error.message}`, 'error');
-    return false;
+    await browser.close();
+    return {
+      success: false,
+      error: `Login failed: ${error.message}`
+    };
   } finally {
     await browser.close();
     log('Browser closed', 'debug');
