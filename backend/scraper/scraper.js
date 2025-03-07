@@ -1,4 +1,5 @@
 const puppeteer = require("puppeteer");
+const { scrapePinterest } = require('./pinterestScraper'); // Import the scrapePinterest function
 
 async function scrapeMetadata(url) {
     let browser;
@@ -35,4 +36,4 @@ async function scrapeMetadata(url) {
     }
 }
 
-module.exports = { scrapeMetadata };
+module.exports = { scrapeMetadata, scrapePinterest };
