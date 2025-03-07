@@ -1,50 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 
-// Directory for storing encrypted session data
+// Directory for storing session data
 const SESSIONS_DIR = path.join(__dirname, '../../data/sessions');
 
 // Ensure sessions directory exists
 if (!fs.existsSync(SESSIONS_DIR)) {
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
   console.log(`Created sessions directory: ${SESSIONS_DIR}`);
-}
-
-// Encryption key (in production, use an environment variable)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'this-is-a-32-byte-encryption-key!!';
-
-/**
- * Encrypt data for storage
- * @param {object} data - Data to encrypt
- * @returns {string} - Encrypted string
- */
-function encrypt(data) {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-  
-  let encrypted = cipher.update(JSON.stringify(data));
-  encrypted = Buffer.concat([encrypted, cipher.final()]);
-  
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
-}
-
-/**
- * Decrypt stored data
- * @param {string} text - Encrypted string
- * @returns {object} - Decrypted data object
- */
-function decrypt(text) {
-  const parts = text.split(':');
-  const iv = Buffer.from(parts.shift(), 'hex');
-  const encryptedText = Buffer.from(parts.join(':'), 'hex');
-  
-  const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY), iv);
-  
-  let decrypted = decipher.update(encryptedText);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  
-  return JSON.parse(decrypted.toString());
 }
 
 /**
@@ -60,7 +23,8 @@ function saveSession(userId, sessionData) {
     // Add timestamp for debugging
     sessionData.lastUpdated = Date.now();
     
-    fs.writeFileSync(filePath, JSON.stringify(sessionData, null, 2));
+    const data = JSON.stringify(sessionData, null, 2);
+    fs.writeFileSync(filePath, data);
     console.log(`Session saved successfully for user ${userId}`);
     return true;
   } catch (error) {
@@ -87,7 +51,6 @@ function getSession(userId) {
     const data = fs.readFileSync(filePath, 'utf8');
     console.log(`Session file found for user ${userId}, size: ${data.length} bytes`);
     
-    // Basic validation of the session data
     const sessionData = JSON.parse(data);
     if (!sessionData || !sessionData.cookies || !Array.isArray(sessionData.cookies)) {
       console.warn(`Invalid session data for user ${userId}`);
