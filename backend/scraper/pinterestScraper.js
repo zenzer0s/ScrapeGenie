@@ -2,6 +2,8 @@ const puppeteer = require('puppeteer');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { captureAuthSession } = require('../utils/pinterest-auth'); // Import the captureAuthSession function
+const sessionManager = require('../services/sessionManager'); // Import the sessionManager
 
 // Configuration for Pinterest scraping
 const CONFIG = {
@@ -73,9 +75,26 @@ async function checkImageQuality(url) {
   }
 }
 
-// Update the scrapePinterest function to use these helpers
-async function scrapePinterest(url, cookies = []) {
-  console.log(`Scraping Pinterest URL: ${url}`);
+// Update the scrapePinterest function to use the session correctly
+async function scrapePinterest(url, userId) {
+  // Ensure userId is a string
+  if (typeof userId !== 'string') {
+    console.error('Invalid userId:', userId);
+    return { 
+      success: false, 
+      error: 'Invalid userId. Please provide a valid userId.' 
+    };
+  }
+
+  // Get session from session manager
+  const session = sessionManager.getSession(userId);
+  
+  if (!session || !session.cookies || session.cookies.length === 0) {
+    return { 
+      success: false, 
+      error: 'No valid session found. Please log in to Pinterest first.' 
+    };
+  }
   
   const browser = await puppeteer.launch({
     headless: "new",
@@ -86,24 +105,27 @@ async function scrapePinterest(url, cookies = []) {
   try {
     const page = await browser.newPage();
     
-    // Set cookies if provided
-    if (cookies && cookies.length > 0) {
-      await page.setCookie(...cookies);
+    // Set cookies
+    await page.setCookie(...session.cookies);
+    
+    // Set user agent if available
+    if (session.userAgent) {
+      await page.setUserAgent(session.userAgent);
     }
     
-    // Monitor network requests for image URLs
-    await page.setRequestInterception(true);
-    const imageUrls = new Set();
+    // Navigate to Pinterest first to set localStorage
+    await page.goto('https://www.pinterest.com', { waitUntil: 'domcontentloaded' });
     
-    page.on('request', request => {
-      const url = request.url();
-      if (url.includes('pinimg.com')) {
-        imageUrls.add(url);
-      }
-      request.continue();
-    });
+    // Set localStorage if available
+    if (session.localStorage) {
+      await page.evaluate((storageData) => {
+        for (const [key, value] of Object.entries(storageData)) {
+          localStorage.setItem(key, value);
+        }
+      }, session.localStorage);
+    }
     
-    // Navigate to Pinterest pin
+    // Navigate to the Pinterest pin URL
     console.log('📍 Navigating to pin...');
     await page.goto(url, { 
       waitUntil: 'networkidle0',
@@ -119,6 +141,9 @@ async function scrapePinterest(url, cookies = []) {
       function isValidImage(img) {
         // Check if image is from Pinterest
         if (!img.src || !img.src.includes('pinimg.com')) return false;
+        
+        // Exclude video thumbnails
+        if (img.src.includes('/videos/thumbnails/')) return false;
         
         // Get dimensions
         const width = img.naturalWidth || img.width || 0;
@@ -285,4 +310,41 @@ async function scrapePinterest(url, cookies = []) {
   }
 }
 
-module.exports = { scrapePinterest };
+async function loginToPinterest(username, password) {
+  try {
+    // Create a temporary session file path
+    const tempSessionPath = path.join(__dirname, '..', '..', 'data', 'temp_session.json');
+    
+    // Use your existing auth function
+    const success = await captureAuthSession(username, password, tempSessionPath);
+    
+    if (!success) {
+      return { 
+        success: false, 
+        error: 'Authentication failed' 
+      };
+    }
+    
+    // Read the session data
+    const sessionData = JSON.parse(fs.readFileSync(tempSessionPath, 'utf8'));
+    
+    // Return in the format expected by auth.js
+    return {
+      success: true,
+      cookies: sessionData.cookies,
+      localStorage: sessionData.localStorage,
+      userAgent: sessionData.userAgent
+    };
+  } catch (error) {
+    console.error('Pinterest login error:', error);
+    return { 
+      success: false, 
+      error: error.message 
+    };
+  }
+}
+
+module.exports = { 
+  scrapePinterest,
+  loginToPinterest 
+};
