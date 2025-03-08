@@ -77,5 +77,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ---
 
 **Made with ❤️ by Praveen Zalaki**
-
-Similar code found with 2 license types
