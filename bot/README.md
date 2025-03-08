@@ -12,9 +12,13 @@ This is the Telegram bot for ScrapeGenie. It receives URLs from users, sends the
 - **Message Processing:**  
   - Delegates URL message processing to a dedicated module (`messageHandler.js`).  
   - Formats messages using Markdown and inline keyboards for interactive actions.
+- **Logging System:**
+  - Advanced error tracking with dedicated logs
+  - Request/response logging for debugging
 - **Modular Design:**  
-  - Command logic is centralized in `bot/commands.js`.  
-  - URL scraping results are processed in `bot/messageHandler.js`.
+  - Command logic is centralized in commands.js.  
+  - URL scraping results are processed in messageHandler.js.
+  - Logging functionality in logger.js
 
 ## Project Structure
 
@@ -22,38 +26,51 @@ This is the Telegram bot for ScrapeGenie. It receives URLs from users, sends the
 bot/
 ├── bot.js                 # Bot entry point (initializes the bot and registers handlers)
 ├── commands.js            # Command handlers (/start, /help, /status, /usage)
-└── messageHandler.js      # URL message processing and scraping result handling
+├── logger.js              # Logger configuration and utility functions
+├── messageHandler.js      # URL message processing and scraping result handling
+├── bot-error.log          # Error log file for the bot
+└── README.md              # This documentation file
 ```
 
-## Setup and Installation
+## Bot Functionality
 
-1. **Clone the Repository:**
-   ```sh
-   git clone <repository-url>
-   cd ScrapeGenie
-   ```
+### Message Processing
+When a user sends a URL, the bot:
+1. Validates the URL format
+2. Sends the URL to the backend for scraping
+3. Formats the response based on content type (YouTube, Instagram, Pinterest, or general website)
+4. Presents the extracted data with appropriate formatting and inline controls
 
-2. **Install Dependencies:**
-   (If you’re using a single package.json at the root or separate ones, adjust accordingly.)
-   ```sh
-   npm install
-   ```
+### Logging
+The bot implements a robust logging system:
+- Error logging to `bot-error.log`
+- Integration with the central logging system in bot.log
+- Different log levels based on environment (development/production)
 
-3. **Configure Environment:**
+### Error Handling
+The bot includes comprehensive error handling:
+- Connection issues with the backend
+- Invalid URL formats
+- Unsupported platforms
+- Timeout handling for slow responses
 
-   Create a `.env` file at the project root with your bot token and backend URL:
-   ```env
-   TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-   BACKEND_URL=http://localhost:5000
-   ```
+## Integration with Backend
 
-4. **Run the Bot:**
-   ```sh
-   node bot/bot.js
-   ```
-   The bot will start polling for messages and respond to commands.
+The bot communicates with the backend server through REST API calls:
+- Scraping requests to `/api/scrape`
+- Health checks to `/health`
+- Session status verification
 
-## Testing the Bot
+## Performance Considerations
 
-- Use the `/start`, `/help`, `/status`, and `/usage` commands to verify functionality.
-- Send various URLs (YouTube, Instagram, and website links) to see how the bot processes and formats the responses.
+- Efficient message processing to handle multiple concurrent users
+- Rate limiting for API calls to prevent abuse
+- Error recovery mechanisms to maintain uptime
+
+## Future Improvements
+
+- Add inline query support for quick URL scraping
+- Implement user preferences for formatting results
+- Add analytics for usage patterns
+- Support for additional content types
+- Implement webhook mode for improved performance
