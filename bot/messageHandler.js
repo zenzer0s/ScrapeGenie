@@ -48,7 +48,7 @@ async function handleUrlMessage(bot, msg) {
       inline_keyboard: [
         [
           {
-            text: '🔗 Open Original',
+            text: 'Watch on YouTube',
             url: url
           }
         ]
@@ -59,8 +59,8 @@ async function handleUrlMessage(bot, msg) {
     if (data.type === 'youtube') {
       console.log('🎥 YouTube content detected!');
       
-      // Create YouTube caption
-      const caption = `📺 *YouTube Video*\n\n*${escapeMarkdown(data.title)}*\n\n🔗 [Watch Video](${data.originalUrl})`;
+      // Create YouTube caption - simplified to just show the title
+      const caption = `*${escapeMarkdown(data.title)}*`;
       
       // Check if we have a thumbnail URL
       if (data.mediaUrl) {
