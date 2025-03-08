@@ -17,7 +17,9 @@ async function handleUrlMessage(bot, msg) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const match = urlRegex.exec(text);
   
-  if (!match) return;
+  if (!match) {
+    return; // No URL found, exit the function
+  }
   
   const url = match[0];
   const chatId = msg.chat.id;
@@ -29,225 +31,84 @@ async function handleUrlMessage(bot, msg) {
     // Show typing animation
     await bot.sendChatAction(chatId, 'typing');
     
-    // Set a timer to update the processing message if it takes too long
-    let dots = 0;
-    const timer = setInterval(async () => {
-      dots = (dots + 1) % 4;
-      const loadingText = "⏳ Processing your URL" + ".".repeat(dots);
-      
-      try {
-        await bot.editMessageText(loadingText, {
-          chat_id: chatId,
-          message_id: processingMsg.message_id
-        });
-      } catch (error) {
-        console.error('Error updating processing message:', error);
-      }
-    }, 2000);
-    
-    // Handle Instagram URLs
-    if (url.includes('instagram.com') || url.includes('instagr.am')) {
-      try {
-        // Ensure the download directory exists
-        if (!fs.existsSync(DOWNLOAD_DIR)) {
-          fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-        }
-        
-        // Call the backend API to scrape Instagram content
-        const response = await axios.post(`${BACKEND_URL}/api/scrape/instagram`, { url });
-        
-        clearInterval(timer);
-        await bot.deleteMessage(chatId, processingMsg.message_id);
-        
-        if (!response.data.success) {
-          throw new Error(response.data.error || 'Failed to scrape Instagram data');
-        }
-        
-        // Look for downloaded files in the correct directory
-        const downloadedFiles = fs.readdirSync(DOWNLOAD_DIR)
-          .filter(file => file.endsWith(".mp4") || file.endsWith(".jpg") || file.endsWith(".png"))
-          .map(file => path.join(DOWNLOAD_DIR, file));
-        
-        if (downloadedFiles.length === 0) {
-          await bot.sendMessage(chatId, "❌ No media found. Please try again later.");
-          return;
-        }
-        
-        // Create keyboard markup with URL
-        const keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: '📱 View on Instagram',
-                url: url
-              }
-            ]
-          ]
-        };
-        
-        // Get the clean caption
-        const cleanCaption = cleanupInstagramText(response.data.caption || '');
-        const messageText = `📸 <b>Instagram Post</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${url}">View Post</a>`;
-        
-        // Send media based on type
-        let sentMedia = false;
-        for (const file of downloadedFiles) {
-          console.log(`📂 Found downloaded file: ${file}`);
-          
-          if (file.endsWith('.mp4')) {
-            await bot.sendVideo(chatId, file, {
-              caption: messageText,
-              parse_mode: 'HTML',
-              reply_markup: keyboard
-            });
-            sentMedia = true;
-          } else if (file.endsWith('.jpg') || file.endsWith('.png')) {
-            await bot.sendPhoto(chatId, file, {
-              caption: messageText,
-              parse_mode: 'HTML',
-              reply_markup: keyboard
-            });
-            sentMedia = true;
-          }
-          
-          // Delete file after sending to save space
-          setTimeout(() => {
-            try {
-              fs.unlinkSync(file);
-              console.log(`✅ Deleted file: ${file}`);
-            } catch (err) {
-              console.error(`❌ Error deleting file ${file}:`, err);
-            }
-          }, 5000);
-        }
-        
-        if (!sentMedia) {
-          await bot.sendMessage(chatId, "❌ Failed to process media. Please try again.");
-        }
-        return;
-      } catch (error) {
-        console.error('Instagram Error:', error);
-        await bot.sendMessage(
-          chatId,
-          '❌ Sorry, I encountered an error while processing your Instagram URL.\n' +
-          'Please ensure the link is valid and try again.',
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
-    }
-    
-    // Handle other URLs as before
-    // For Pinterest URLs, use the new scraper
-    if (url.includes('pinterest.com') || url.includes('pin.it')) {
-      const userId = msg.from.id.toString();
-      
-      try {
-        const result = await pinterestScraper.scrapePinterest(url, userId);
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to scrape Pinterest data');
-        }
-
-        // Create keyboard markup with URL
-        const keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: '📌 View on Pinterest',
-                url: result.originalUrl || url
-              }
-            ]
-          ]
-        };
-
-        // Add this right before sending the photo
-        console.log(`🔄 Sending image to Telegram: ${result.mediaUrl}`);
-
-        // Then the existing code
-        await bot.sendPhoto(chatId, result.mediaUrl, {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard
-        });
-        
-        clearInterval(timer);
-        await bot.deleteMessage(chatId, processingMsg.message_id);
-      } catch (error) {
-        console.error('Pinterest Error:', error);
-        await bot.sendMessage(
-          chatId,
-          '❌ Sorry, I encountered an error while processing your Pinterest URL.\n' +
-          'Please ensure the link is valid and try again.',
-          { parse_mode: 'Markdown' }
-        );
-      }
-      return;
-    }
-    
-    // Handle other URLs as before
+    // Call backend API to process the URL
+    console.log(`🔍 Calling API for URL: ${url}`);
     const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
     
-    clearInterval(timer);
+    // Delete the "processing" message
     await bot.deleteMessage(chatId, processingMsg.message_id);
     
-    const data = response.data;
+    // Log the response for debugging
+    console.log('📝 API Response:', JSON.stringify(response.data));
     
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to scrape data');
-    }
-
+    const data = response.data.data;
+    
+    // Create keyboard markup with URL
     const keyboard = {
       inline_keyboard: [
         [
           {
-            text: '🔗 View Original',
-            url: data.originalUrl || url
+            text: '🔗 Open Original',
+            url: url
           }
         ]
       ]
     };
 
-    // Process based on content type
+    // Handle based on content type
     if (data.type === 'youtube') {
-      // Handle YouTube content
-      // Add "📺 YouTube Video" label and extra newline between title and link.
-      const caption = `📺 *YouTube Video*\n\n*${data.title}*\n\n🔗 [Watch Video](${data.originalUrl})`;
+      console.log('🎥 YouTube content detected!');
+      
+      // Create YouTube caption
+      const caption = `📺 *YouTube Video*\n\n*${escapeMarkdown(data.title)}*\n\n🔗 [Watch Video](${data.originalUrl})`;
+      
+      // Check if we have a thumbnail URL
       if (data.mediaUrl) {
-        await bot.sendPhoto(chatId, data.mediaUrl, { caption, parse_mode: 'Markdown', reply_markup: keyboard });
-      } else {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown', reply_markup: keyboard });
-      }
-    } else if (data.type === 'instagram') {
-      // Handle Instagram content
-      if (data.contentType === 'reel') {
-        // Clean the caption and remove hashtags
-        const cleanCaption = cleanupInstagramText(data.caption);
-        
-        await bot.sendMessage(chatId,
-          `📱 <b>Instagram Reel</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${data.originalUrl}">View Reel</a>`,
-          { parse_mode: 'HTML', reply_markup: keyboard }
-        );
-      } else {
-        const cleanCaption = cleanupInstagramText(data.caption);
-        const messageText = `📸 <b>Instagram Post</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${data.originalUrl}">View Post</a>`;
-        
-        if (data.mediaUrl) {
-          await bot.sendPhoto(chatId, data.mediaUrl, { caption: messageText, parse_mode: 'HTML', reply_markup: keyboard });
-        } else {
-          await bot.sendMessage(chatId, messageText, { parse_mode: 'HTML', reply_markup: keyboard });
+        try {
+          console.log(`📸 Sending YouTube thumbnail: ${data.mediaUrl}`);
+          await bot.sendPhoto(chatId, data.mediaUrl, { 
+            caption: caption, 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard 
+          });
+          console.log('✅ YouTube thumbnail sent successfully');
+        } catch (photoError) {
+          console.error(`❌ Error sending YouTube photo: ${photoError.message}`);
+          // Fallback to text-only message
+          await bot.sendMessage(chatId, caption, { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard 
+          });
         }
+      } else {
+        // No thumbnail, send text only
+        await bot.sendMessage(chatId, caption, { 
+          parse_mode: 'Markdown',
+          reply_markup: keyboard 
+        });
       }
+      return;
     }
+    
+    // Handle Instagram URLs
+    if (data.type === 'instagram') {
+      // Your Instagram handling code
+    }
+    
+    // Handle other content types
+    // ...
+
   } catch (error) {
-    // Make sure this catch block is properly closed
-    logger.error(`Error handling message: ${error.stack || error}`);
-    await bot.sendMessage(msg.chat.id,
-      '❌ An error occurred while processing your request.\n' +
-      'Please try again later or contact support if the issue persists.',
-      { parse_mode: 'Markdown' }
-    );
-  } // Make sure this closing brace for the catch exists
-} // And this closing brace for the function exists
+    console.error(`❌ Error handling URL: ${error.message}`);
+    logger.error(`Error handling URL: ${error.stack || error}`);
+    
+    try {
+      await bot.sendMessage(chatId, '❌ Sorry, I encountered an error processing your request. Please try again later.');
+    } catch (sendError) {
+      console.error(`Failed to send error message: ${sendError.message}`);
+    }
+  }
+}
 
 async function handleMessage(ctx) {
     const text = ctx.message.text;
