@@ -1,7 +1,6 @@
 // bot/messageHandler.js
 const axios = require('axios');
 const logger = require('./logger');
-// Fix the import paths
 const pinterestScraper = require('../backend/scraper/pinterestScraper');
 const sessionManager = require('../backend/services/sessionManager');
 const { scrapeContent } = require("../backend/scraper/scraperManager");
@@ -9,6 +8,8 @@ const fs = require("fs");
 const path = require("path");
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+// Use the absolute download path that's now fixed in instaScraper.js
+const DOWNLOAD_DIR = "/home/zen/Documents/Pro/ScrapeGenie/downloads";
 
 async function handleUrlMessage(bot, msg) {
   // Extract URL from message text
@@ -44,7 +45,99 @@ async function handleUrlMessage(bot, msg) {
       }
     }, 2000);
     
-    const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 8000}`;
+    // Handle Instagram URLs
+    if (url.includes('instagram.com') || url.includes('instagr.am')) {
+      try {
+        // Ensure the download directory exists
+        if (!fs.existsSync(DOWNLOAD_DIR)) {
+          fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+        }
+        
+        // Call the backend API to scrape Instagram content
+        const response = await axios.post(`${BACKEND_URL}/api/scrape/instagram`, { url });
+        
+        clearInterval(timer);
+        await bot.deleteMessage(chatId, processingMsg.message_id);
+        
+        if (!response.data.success) {
+          throw new Error(response.data.error || 'Failed to scrape Instagram data');
+        }
+        
+        // Look for downloaded files in the correct directory
+        const downloadedFiles = fs.readdirSync(DOWNLOAD_DIR)
+          .filter(file => file.endsWith(".mp4") || file.endsWith(".jpg") || file.endsWith(".png"))
+          .map(file => path.join(DOWNLOAD_DIR, file));
+        
+        if (downloadedFiles.length === 0) {
+          await bot.sendMessage(chatId, "❌ No media found. Please try again later.");
+          return;
+        }
+        
+        // Create keyboard markup with URL
+        const keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: '📱 View on Instagram',
+                url: url
+              }
+            ]
+          ]
+        };
+        
+        // Get the clean caption
+        const cleanCaption = cleanupInstagramText(response.data.caption || '');
+        const messageText = `📸 <b>Instagram Post</b>\n\n📝 ${cleanCaption}\n\n🔗 <a href="${url}">View Post</a>`;
+        
+        // Send media based on type
+        let sentMedia = false;
+        for (const file of downloadedFiles) {
+          console.log(`📂 Found downloaded file: ${file}`);
+          
+          if (file.endsWith('.mp4')) {
+            await bot.sendVideo(chatId, file, {
+              caption: messageText,
+              parse_mode: 'HTML',
+              reply_markup: keyboard
+            });
+            sentMedia = true;
+          } else if (file.endsWith('.jpg') || file.endsWith('.png')) {
+            await bot.sendPhoto(chatId, file, {
+              caption: messageText,
+              parse_mode: 'HTML',
+              reply_markup: keyboard
+            });
+            sentMedia = true;
+          }
+          
+          // Delete file after sending to save space
+          setTimeout(() => {
+            try {
+              fs.unlinkSync(file);
+              console.log(`✅ Deleted file: ${file}`);
+            } catch (err) {
+              console.error(`❌ Error deleting file ${file}:`, err);
+            }
+          }, 5000);
+        }
+        
+        if (!sentMedia) {
+          await bot.sendMessage(chatId, "❌ Failed to process media. Please try again.");
+        }
+        return;
+      } catch (error) {
+        console.error('Instagram Error:', error);
+        await bot.sendMessage(
+          chatId,
+          '❌ Sorry, I encountered an error while processing your Instagram URL.\n' +
+          'Please ensure the link is valid and try again.',
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+    }
+    
+    // Handle other URLs as before
     // For Pinterest URLs, use the new scraper
     if (url.includes('pinterest.com') || url.includes('pin.it')) {
       const userId = msg.from.id.toString();
@@ -216,11 +309,9 @@ function escapeMarkdown(text) {
     .trim();
     
   // Escape only specific Markdown characters that are problematic
-  // Using HTML mode instead as it's more reliable for this case
   return cleanText;
 }
 
-// Add this new function to your file
 function cleanupInstagramText(text) {
   if (!text) return '';
   
