@@ -62,39 +62,56 @@ async function fetchInstagramPost(url) {
             }
             
             const fileSearchStartTime = Date.now();
-
-            // Extract shortcode from URL 
+            // Extract shortcode from URL
             const shortcode = url.split('/p/')[1]?.split(/[/?#]/)[0] || url.split('/reel/')[1]?.split(/[/?#]/)[0];
 
             if (!shortcode) {
                 return reject(new Error("Could not extract shortcode from URL"));
             }
 
-            // Look specifically for files with this shortcode
-            const downloadedFiles = fs.readdirSync(downloadDir)
+            // Look for files with this shortcode
+            const allFiles = fs.readdirSync(downloadDir)
                 .filter(file => file.startsWith(shortcode))
-                .map(file => path.join(downloadDir, file))
-                .filter(file => file.endsWith(".mp4") || file.endsWith(".jpg") || file.endsWith(".png"));
+                .map(file => path.join(downloadDir, file));
+
+            const mediaFiles = allFiles.filter(file => file.endsWith(".mp4") || file.endsWith(".jpg") || file.endsWith(".png"));
                 
             console.log(`⏱️ File search: ${formatTime(Date.now() - fileSearchStartTime)}`);
 
-            if (downloadedFiles.length === 0) {
+            if (mediaFiles.length === 0) {
                 return reject(new Error(`No media found for shortcode: ${shortcode}`));
             }
 
-            // For videos prioritize .mp4 files, for images take the first one
-            const videoFile = downloadedFiles.find(file => file.endsWith(".mp4"));
-            const mediaPath = pythonOutput.is_video && videoFile ? videoFile : downloadedFiles[0];
+            // Check if this is a carousel post (multiple images)
+            const isCarousel = mediaFiles.length > 1 && !pythonOutput.is_video;
+            const videoFile = mediaFiles.find(file => file.endsWith(".mp4"));
 
-            console.log(`📂 Downloaded File: ${mediaPath}`);
-            
-            // Calculate total time
-            console.log(`⏱️ Total processing: ${formatTime(Date.now() - startTime)}`);
+            // For videos, return single file; for carousels, return array; otherwise just first image
+            let mediaPath;
+            if (pythonOutput.is_video && videoFile) {
+                mediaPath = videoFile;
+                console.log(`📂 Downloaded Video File: ${mediaPath}`);
+            } else if (isCarousel) {
+                // Sort files by their numerical index for proper order
+                mediaPath = mediaFiles.sort((a, b) => {
+                    const aMatch = a.match(/_(\d+)\./);
+                    const bMatch = b.match(/_(\d+)\./);
+                    const aNum = aMatch ? parseInt(aMatch[1]) : 0;
+                    const bNum = bMatch ? parseInt(bMatch[1]) : 0;
+                    return aNum - bNum;
+                });
+                console.log(`📂 Downloaded Carousel with ${mediaPath.length} images`);
+            } else {
+                // Single image, just take the first file
+                mediaPath = mediaFiles[0];
+                console.log(`📂 Downloaded Image File: ${mediaPath}`);
+            }
 
             resolve({
                 mediaPath,
                 caption: pythonOutput.caption || "",
                 is_video: pythonOutput.is_video || false,
+                is_carousel: isCarousel,
                 performance: {
                     totalTime: formatTime(Date.now() - startTime),
                     pythonTime: formatTime(pythonEndTime - pythonStartTime),

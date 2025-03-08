@@ -53,18 +53,14 @@ async function handleUrlMessage(bot, msg) {
           throw new Error('Instagram scraping failed');
         }
         
-        // FIXED: Instagram response is nested in response.data.data
-        const mediaPath = response.data.data.mediaPath;
-        const caption = response.data.data.caption || '';
-        const isVideo = response.data.data.is_video || false;
+        const data = response.data.data;
+        const mediaPath = data.mediaPath;
+        const caption = data.caption || '';
+        const isVideo = data.is_video || false;
+        const isCarousel = data.is_carousel || false;
         
-        console.log(`📂 Media path: ${mediaPath}`);
-        console.log(`🎬 Is video: ${isVideo}`);
-        
-        // Verify file exists
-        if (!mediaPath || !fs.existsSync(mediaPath)) {
-          throw new Error(`Media file not found at: ${mediaPath}`);
-        }
+        console.log(`📂 Media path:`, mediaPath);
+        console.log(`🎬 Is video: ${isVideo}, Is carousel: ${isCarousel}`);
         
         // Create keyboard markup with URL
         const keyboard = {
@@ -76,15 +72,57 @@ async function handleUrlMessage(bot, msg) {
         // Format caption
         const messageText = caption ? `${caption}` : '';
         
-        // Send media based on type
-        if (isVideo) {
+        // Handle carousel posts (multiple images)
+        if (isCarousel && Array.isArray(mediaPath) && mediaPath.length > 0) {
+          console.log(`🖼️ Sending carousel with ${mediaPath.length} images...`);
+          
+          // Prepare media group format for Telegram
+          const mediaGroup = mediaPath.map((filePath, index) => {
+            if (!fs.existsSync(filePath)) {
+              console.warn(`⚠️ File not found: ${filePath}`);
+              return null;
+            }
+            
+            // Only first image gets the caption
+            return {
+              type: 'photo',
+              media: fs.createReadStream(filePath),
+              caption: index === 0 ? messageText : '',
+              parse_mode: 'HTML'
+            };
+          }).filter(Boolean); // Remove any nulls from non-existent files
+          
+          if (mediaGroup.length === 0) {
+            throw new Error('No valid files found in carousel');
+          }
+          
+          // Send as media group
+          await bot.sendMediaGroup(chatId, mediaGroup);
+          
+          // Send button separately since media groups don't support inline keyboards
+          await bot.sendMessage(chatId, '📱 View original post:', {
+            reply_markup: keyboard
+          });
+          
+        } else if (isVideo) {
+          // Single video
+          if (!fs.existsSync(mediaPath)) {
+            throw new Error(`Video file not found at: ${mediaPath}`);
+          }
+          
           console.log('📹 Sending video...');
           await bot.sendVideo(chatId, mediaPath, {
             caption: messageText,
             reply_markup: keyboard
           });
+          
         } else {
-          console.log('🖼️ Sending photo...');
+          // Single image
+          if (!fs.existsSync(mediaPath)) {
+            throw new Error(`Image file not found at: ${mediaPath}`);
+          }
+          
+          console.log('🖼️ Sending single image...');
           await bot.sendPhoto(chatId, mediaPath, {
             caption: messageText,
             reply_markup: keyboard
