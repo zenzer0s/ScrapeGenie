@@ -1,24 +1,35 @@
 import sys
 import instaloader
 import os
-import shutil
+import time
+import json
 
-# Ensure URL and output path are provided
+# Helper function for timing
+def log_time(start_time, step_name):
+    elapsed = time.time() - start_time
+    formatted = f"{elapsed:.2f}s"
+    print(f"⏱️ {step_name}: {formatted}")
+    return time.time()
+
+# Main execution
+start_total = time.time()
+
+# Ensure URL is provided
 if len(sys.argv) < 3:
-    print("❌ Error: Missing required arguments")
-    print("Usage: python instaDownloader.py <URL> <OUTPUT_DIR>")
+    print(json.dumps({"error": "Missing required arguments"}))
     sys.exit(1)
 
 url = sys.argv[1]
-output_dir = sys.argv[2]  # Get the download directory from command line
+output_dir = sys.argv[2]
 
-print(f"📌 Received output directory: {output_dir}")
+# Log start
+print(f"\n⏱️ Starting Instagram processing for: {url}")
 
-# Initialize Instaloader with custom settings
-# Changed dirname_pattern from "." to target directory to ensure correct path
+# Initialize Instaloader
+start_init = time.time()
 L = instaloader.Instaloader(
-    dirname_pattern=output_dir,  # Use the exact output directory
-    filename_pattern="{shortcode}",  # Name files using post shortcode instead of timestamp
+    dirname_pattern=output_dir,
+    filename_pattern="{shortcode}",
     download_pictures=True,
     download_videos=True,
     download_video_thumbnails=False,
@@ -26,24 +37,35 @@ L = instaloader.Instaloader(
     download_comments=False,
     save_metadata=False
 )
+start_extraction = log_time(start_init, "Instaloader initialization")
 
 try:
-    # Extract post shortcode from URL
+    # Extract post shortcode
     post_shortcode = url.split("/")[-2]
-    if not post_shortcode:  # Handle trailing slash
+    if not post_shortcode:
         post_shortcode = url.split("/")[-3]
-        
+    
+    start_fetch = log_time(start_extraction, "URL extraction")
+    
+    # Fetch post
     post = instaloader.Post.from_shortcode(L.context, post_shortcode)
+    start_download = log_time(start_fetch, "Post info fetch")
     
-    print(f"📂 Output directory: {output_dir}")
-    print(f"🔍 Post shortcode: {post_shortcode}")
+    # Download post
+    L.download_post(post, target="")
+    log_time(start_download, "Media download")
     
-    # Download directly to output_dir without creating subdirectories
-    # We don't need to call os.makedirs() since dirname_pattern handles this
-    L.download_post(post, "")  # Use empty target since dirname_pattern has the full path
+    # Get result info
+    result = {
+        "success": True,
+        "shortcode": post_shortcode,
+        "caption": post.caption if hasattr(post, 'caption') else "",
+        "is_video": post.is_video if hasattr(post, 'is_video') else False,
+        "total_time": f"{time.time() - start_total:.2f}s"
+    }
     
-    print(f"✅ Downloaded: {post_shortcode} to {output_dir}")
+    print(json.dumps(result))
 
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(json.dumps({"error": str(e)}))
     sys.exit(1)
