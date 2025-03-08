@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.post("/", async (req, res) => {
     const { url } = req.body;
+    const userId = req.body.userId || 'default'; // Add a default userId
 
     if (!url) {
         return res.status(400).json({ success: false, error: "No URL provided" });
@@ -14,7 +15,7 @@ router.post("/", async (req, res) => {
     console.log(`🟢 Received API request for: ${url}`);
 
     try {
-        const result = await scrapeContent(url);
+        const result = await scrapeContent(url, userId); // Pass userId to scrapeContent
         console.log(`✅ Scraper Result:`, result); // Log output from scraperManager.js
         
         if (!result || result.error) {
