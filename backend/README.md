@@ -1,69 +1,67 @@
 # ScrapeGenie Backend
 
-This is the backend service for ScrapeGenie. It provides an API for scraping data from various sources (YouTube, Instagram, and general websites) and returns structured metadata that the bot consumes.
+This is the backend service for ScrapeGenie. It provides APIs for scraping data from various platforms (YouTube, Instagram, Pinterest, and general websites) and returns structured metadata that the bot consumes.
 
 ## Features
 
 - **Scraping Modules:**  
-  - `ytScraper.js`: Extracts YouTube video details (title, thumbnail URL).  
-  - `instaScraper.js`: Retrieves Instagram post/reel information (caption, media URL).  
-  - `metadata.js`: Scrapes generic website metadata (title, description, preview, etc.).
+  - `ytScraper.js`: Extracts YouTube video details (title, thumbnail URL)
+  - `instaScraper.js`: Retrieves Instagram post/reel information (caption, media URL)
+  - `pinterestScraper.js`: Extracts Pinterest images and pin details
+  - `metadata.js`: Scrapes generic website metadata (title, description, preview, etc.)
+- **Authentication System:**  
+  - Pinterest login integration via `pinterest-auth.js`
+  - Session management with `sessionManager.js`
+- **Multi-platform Support:**
+  - Instagram downloader with Python utility (`instaDownloader.py`)
+  - YouTube content extraction
+  - Pinterest image quality optimization
 - **Browser Management:**  
-  Utilizes Puppeteer with a shared browser instance for efficient resource usage.
-- **Testing:**  
-  Contains unit and integration tests in `backend/tests/`.
+  - Utilizes Puppeteer with shared browser instance via `browserManager.js`
+  - Advanced scraper management with `scraperManager.js`
 
 ## Project Structure
 
 ```
 backend/
+├── public/
+│   └── pinterest-login.html  # Pinterest authentication interface
 ├── routes/
-│   ├── aiRoutes.js         # (if applicable)
-│   └── scrape.js           # API route for scraping requests
+│   ├── auth.js               # Authentication endpoints
+│   └── scrape.js             # Scraping API endpoints
 ├── scraper/
-│   ├── browserManager.js   # Manages the Puppeteer browser instance
-│   ├── helpers.js          # Helper functions used by scrapers
-│   ├── instaScraper.js     # Instagram scraping logic
-│   ├── metadata.js         # General website metadata scraper
-│   ├── scraper.js          # (Additional scraping logic)
-│   └── ytScraper.js        # YouTube scraping logic
-├── server.js               # Main Express server file
+│   ├── browserManager.js     # Manages Puppeteer browser instances
+│   ├── helpers.js            # Helper functions for scrapers
+│   ├── instaDownloader.py    # Python script for Instagram downloads
+│   ├── instaScraper.js       # Instagram-specific scraper
+│   ├── metadata.js           # General website metadata scraper
+│   ├── pinterestScraper.js   # Pinterest-specific scraper
+│   ├── scraper.js            # Core scraping logic
+│   ├── scraperManager.js     # Manages different scraper instances
+│   └── ytScraper.js          # YouTube-specific scraper
+├── services/
+│   └── sessionManager.js     # Manages user sessions
 ├── tests/
-│   ├── api.test.js         # API tests
-│   └── scraper.test.js     # Scraper tests
-└── utils/
-    └── helpers.js          # Shared utility functions
+│   ├── test-pinterest-image-refined.js  # Pinterest image quality tests
+│   └── test-pinterest-quality.js        # Pinterest content tests
+├── utils/
+│   ├── helpers.js            # General utility functions
+│   └── pinterest-auth.js     # Pinterest authentication utilities
+├── README.md                 # This documentation file
+└── server.js                 # Main Express server file
 ```
 
-## Setup and Installation
+## Performance Considerations
 
-1. **Clone the Repository:**
-   ```sh
-   git clone <repository-url>
-   cd ScrapeGenie/backend
-   ```
+The backend uses several optimization techniques:
+- Shared browser instance via `browserManager.js`
+- Scraper management for efficient resource allocation
+- Session persistence for faster authentication
+- Python integration for specialized tasks
 
-2. **Install Dependencies:**
-   ```sh
-   npm install
-   ```
+## Future Improvements
 
-3. **Configure Environment:**
-   Create a `.env` file in the `backend` folder (this file should be in your `.gitignore`):
-   ```env
-   PORT=5000
-   # Add any additional backend-specific environment variables here
-   ```
-
-4. **Run the Server:**
-   ```sh
-   npm start
-   ```
-   The server will run on the port specified in your `.env` file (default is 5000).
-
-## Testing
-
-To run tests:
-```sh
-npm test
-```
+- Add support for additional platforms (TikTok, Twitter, etc.)
+- Implement caching to reduce redundant scraping
+- Add rate limiting to prevent abuse
+- Enhance error reporting and monitoring
