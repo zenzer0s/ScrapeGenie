@@ -25,7 +25,7 @@ async function expandPinterestUrl(url) {
     }
 }
 
-async function scrapeContent(url) {
+async function scrapeContent(url, userId = 'default') {
     try {
         console.log(`🔍 Received URL: ${url}`);
 
@@ -38,8 +38,8 @@ async function scrapeContent(url) {
             console.log("📸 Instagram detected! ✅ Calling fetchInstagramPost...");
             return await fetchInstagramPost(url); // 🚀 Only use Instaloader, not Puppeteer!
         } else if (PATTERNS.pinterest.test(url)) {
-            console.log("📌 Pinterest detected! Calling scrapePinterest...");
-            return await scrapePinterest(url);
+            console.log(`📌 Pinterest detected! Calling scrapePinterest...`);
+            return await scrapePinterest(url, userId); // Pass userId here
         } else if (PATTERNS.youtube.test(url)) {
             console.log("🎥 YouTube detected! Calling scrapeYouTube...");
             return await scrapeYouTube(url);
