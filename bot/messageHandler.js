@@ -29,17 +29,83 @@ async function handleUrlMessage(bot, msg) {
     
     console.log(`🔍 Calling API for URL: ${url}`);
     
-    // Make the API call - THIS WAS MISSING OR INCOMPLETE
+    // Identify URL type before making API call
+    const isInstagramUrl = url.includes('instagram.com') || url.includes('instagr.am');
+    const isPinterestUrl = url.includes('pinterest.com') || url.includes('pin.it');
+    const isYoutubeUrl = url.includes('youtube.com') || url.includes('youtu.be');
+    
+    // Make the API call
     const response = await axios.post(`${BACKEND_URL}/api/scrape`, { 
       url,
       userId: msg.from.id.toString() 
     });
     
+    // Log the response for debugging
+    console.log("API Response:", JSON.stringify(response.data, null, 2));
+    
     // Delete processing message
     await bot.deleteMessage(chatId, processingMsg.message_id);
     
-    // Handle the response
-    if (!response || !response.data || !response.data.success) {
+    // Handle Instagram separately as it has a different response structure
+    if (isInstagramUrl) {
+      try {
+        if (!response.data || !response.data.success || !response.data.data) {
+          throw new Error('Instagram scraping failed');
+        }
+        
+        // FIXED: Instagram response is nested in response.data.data
+        const mediaPath = response.data.data.mediaPath;
+        const caption = response.data.data.caption || '';
+        const isVideo = response.data.data.is_video || false;
+        
+        console.log(`📂 Media path: ${mediaPath}`);
+        console.log(`🎬 Is video: ${isVideo}`);
+        
+        // Verify file exists
+        if (!mediaPath || !fs.existsSync(mediaPath)) {
+          throw new Error(`Media file not found at: ${mediaPath}`);
+        }
+        
+        // Create keyboard markup with URL
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '📱 Open in Instagram', url: url }]
+          ]
+        };
+        
+        // Format caption
+        const messageText = caption ? `${caption}` : '';
+        
+        // Send media based on type
+        if (isVideo) {
+          console.log('📹 Sending video...');
+          await bot.sendVideo(chatId, mediaPath, {
+            caption: messageText,
+            reply_markup: keyboard
+          });
+        } else {
+          console.log('🖼️ Sending photo...');
+          await bot.sendPhoto(chatId, mediaPath, {
+            caption: messageText,
+            reply_markup: keyboard
+          });
+        }
+        
+        console.log('✅ Instagram content sent successfully');
+        return;
+      } catch (error) {
+        console.error(`❌ Instagram error: ${error.message}`);
+        await bot.sendMessage(
+          chatId,
+          `❌ Sorry, I could not process this Instagram link.\nError: ${error.message}`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+    }
+    
+    // Handle Pinterest and YouTube (these have data.type structure)
+    if (!response.data.success || !response.data.data) {
       throw new Error('Scraping failed');
     }
     
@@ -50,16 +116,15 @@ async function handleUrlMessage(bot, msg) {
       inline_keyboard: [
         [
           {
-            text: 'View on Pinterest',
+            text: 'Watch on YouTube',
             url: url
           }
         ]
       ]
     };
 
-    // Rest of your code to handle different content types...
+    // Handle different content types
     if (data.type === 'youtube') {
-      // Handle YouTube content
       const caption = `*${escapeMarkdown(data.title)}*`;
       
       if (data.mediaUrl) {
@@ -75,18 +140,13 @@ async function handleUrlMessage(bot, msg) {
         });
       }
     } else if (data.type === 'pinterest') {
-      // Handle Pinterest content
       await bot.sendPhoto(chatId, data.mediaUrl, {
-        //caption: `*Pinterest Image*`,
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
-    } else if (data.type === 'instagram') {
-      // Handle Instagram content
-      // Your Instagram handling code here
     } else {
-      // Handle other content types
-      await bot.sendMessage(chatId, `✅ Content scraped successfully. Type: ${data.type}`, {
+      // Handle generic/unknown content types
+      await bot.sendMessage(chatId, `✅ Content scraped successfully. Type: ${data.type || 'unknown'}`, {
         reply_markup: keyboard
       });
     }
@@ -96,7 +156,7 @@ async function handleUrlMessage(bot, msg) {
     logger.error(`Error handling URL: ${error}`);
     
     try {
-      await bot.sendMessage(chatId, '❌ Sorry, I encountered an error processing your request. Please try again later.');
+      await bot.sendMessage(chatId, `❌ Sorry, I encountered an error processing your request.\nError: ${error.message}`);
     } catch (sendError) {
       console.error(`Failed to send error message: ${sendError.message}`);
     }
