@@ -29,32 +29,37 @@ router.post("/", async (req, res) => {
     }
 });
 
-// Add this new Instagram-specific endpoint
-router.post("/instagram", async (req, res) => {
-    const { url } = req.body;
+// In your Instagram route handler:
 
+router.post("/instagram", async (req, res) => {
+    const startTime = Date.now();
+    const { url } = req.body;
+    
+    console.log(`\n🔍 Instagram request received for: ${url}`);
+    
     if (!url) {
-        return res.status(400).json({ success: false, error: "No URL provided" });
+        return res.status(400).json({ success: false, error: "URL is required" });
     }
 
-    console.log(`🟢 Received Instagram API request for: ${url}`);
-
     try {
-        const mediaPath = await fetchInstagramPost(url);
+        console.log(`⏱️ Starting Instagram process...`);
+        const result = await fetchInstagramPost(url);
         
-        // Return success with the filepath
-        res.json({ 
-            success: true, 
-            mediaPath,
-            caption: "", // Add caption if available
-            originalUrl: url
+        console.log(`⏱️ API response preparation: ${formatTime(Date.now() - startTime)}`);
+        console.log(`✅ Instagram process complete in ${result.performance.totalTime}`);
+        
+        return res.json({
+            success: true,
+            mediaPath: result.mediaPath,
+            caption: result.caption,
+            is_video: result.is_video,
+            performance: result.performance
         });
     } catch (error) {
-        console.error("❌ Instagram Scraper Error:", error);
-        res.status(500).json({ 
-            success: false, 
-            error: "Instagram scraping failed", 
-            details: error.message 
+        console.error(`❌ Instagram error: ${error.message}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
