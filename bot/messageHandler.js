@@ -1,14 +1,10 @@
 // bot/messageHandler.js
 const axios = require('axios');
 const logger = require('./logger');
-const pinterestScraper = require('../backend/scraper/pinterestScraper');
-const sessionManager = require('../backend/services/sessionManager');
-const { scrapeContent } = require("../backend/scraper/scraperManager");
 const fs = require("fs");
 const path = require("path");
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
-// Use the absolute download path that's now fixed in instaScraper.js
 const DOWNLOAD_DIR = "/home/zen/Documents/Pro/ScrapeGenie/downloads";
 
 async function handleUrlMessage(bot, msg) {
@@ -31,15 +27,21 @@ async function handleUrlMessage(bot, msg) {
     // Show typing animation
     await bot.sendChatAction(chatId, 'typing');
     
-    // Call backend API to process the URL
     console.log(`🔍 Calling API for URL: ${url}`);
-    const response = await axios.post(`${BACKEND_URL}/api/scrape`, { url });
     
-    // Delete the "processing" message
+    // Make the API call - THIS WAS MISSING OR INCOMPLETE
+    const response = await axios.post(`${BACKEND_URL}/api/scrape`, { 
+      url,
+      userId: msg.from.id.toString() 
+    });
+    
+    // Delete processing message
     await bot.deleteMessage(chatId, processingMsg.message_id);
     
-    // Log the response for debugging
-    console.log('📝 API Response:', JSON.stringify(response.data));
+    // Handle the response
+    if (!response || !response.data || !response.data.success) {
+      throw new Error('Scraping failed');
+    }
     
     const data = response.data.data;
     
@@ -48,59 +50,50 @@ async function handleUrlMessage(bot, msg) {
       inline_keyboard: [
         [
           {
-            text: 'Watch on YouTube',
+            text: 'View on Pinterest',
             url: url
           }
         ]
       ]
     };
 
-    // Handle based on content type
+    // Rest of your code to handle different content types...
     if (data.type === 'youtube') {
-      console.log('🎥 YouTube content detected!');
-      
-      // Create YouTube caption - simplified to just show the title
+      // Handle YouTube content
       const caption = `*${escapeMarkdown(data.title)}*`;
       
-      // Check if we have a thumbnail URL
       if (data.mediaUrl) {
-        try {
-          console.log(`📸 Sending YouTube thumbnail: ${data.mediaUrl}`);
-          await bot.sendPhoto(chatId, data.mediaUrl, { 
-            caption: caption, 
-            parse_mode: 'Markdown',
-            reply_markup: keyboard 
-          });
-          console.log('✅ YouTube thumbnail sent successfully');
-        } catch (photoError) {
-          console.error(`❌ Error sending YouTube photo: ${photoError.message}`);
-          // Fallback to text-only message
-          await bot.sendMessage(chatId, caption, { 
-            parse_mode: 'Markdown',
-            reply_markup: keyboard 
-          });
-        }
+        await bot.sendPhoto(chatId, data.mediaUrl, { 
+          caption: caption, 
+          parse_mode: 'Markdown',
+          reply_markup: keyboard 
+        });
       } else {
-        // No thumbnail, send text only
         await bot.sendMessage(chatId, caption, { 
           parse_mode: 'Markdown',
           reply_markup: keyboard 
         });
       }
-      return;
+    } else if (data.type === 'pinterest') {
+      // Handle Pinterest content
+      await bot.sendPhoto(chatId, data.mediaUrl, {
+        //caption: `*Pinterest Image*`,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+    } else if (data.type === 'instagram') {
+      // Handle Instagram content
+      // Your Instagram handling code here
+    } else {
+      // Handle other content types
+      await bot.sendMessage(chatId, `✅ Content scraped successfully. Type: ${data.type}`, {
+        reply_markup: keyboard
+      });
     }
     
-    // Handle Instagram URLs
-    if (data.type === 'instagram') {
-      // Your Instagram handling code
-    }
-    
-    // Handle other content types
-    // ...
-
   } catch (error) {
     console.error(`❌ Error handling URL: ${error.message}`);
-    logger.error(`Error handling URL: ${error.stack || error}`);
+    logger.error(`Error handling URL: ${error}`);
     
     try {
       await bot.sendMessage(chatId, '❌ Sorry, I encountered an error processing your request. Please try again later.');
@@ -160,17 +153,14 @@ async function handleMessage(ctx) {
 
 function escapeMarkdown(text) {
   if (!text) return '';
-  
-  // First filter out long hashtags and clean up the text
-  let cleanText = text
-    // Remove hashtags with more than 15 characters
-    .replace(/#[^\s#]{15,}/g, '')
-    // Remove excessive whitespace
-    .replace(/\s+/g, ' ')
-    .trim();
-    
-  // Escape only specific Markdown characters that are problematic
-  return cleanText;
+  return text
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/\*/g, '\\*')
+    .replace(/\_/g, '\\_')
+    .replace(/\`/g, '\\`');
 }
 
 function cleanupInstagramText(text) {
