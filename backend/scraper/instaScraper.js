@@ -62,18 +62,30 @@ async function fetchInstagramPost(url) {
             }
             
             const fileSearchStartTime = Date.now();
-            // Find the downloaded media file
+
+            // Extract shortcode from URL 
+            const shortcode = url.split('/p/')[1]?.split(/[/?#]/)[0] || url.split('/reel/')[1]?.split(/[/?#]/)[0];
+
+            if (!shortcode) {
+                return reject(new Error("Could not extract shortcode from URL"));
+            }
+
+            // Look specifically for files with this shortcode
             const downloadedFiles = fs.readdirSync(downloadDir)
+                .filter(file => file.startsWith(shortcode))
                 .map(file => path.join(downloadDir, file))
                 .filter(file => file.endsWith(".mp4") || file.endsWith(".jpg") || file.endsWith(".png"));
                 
             console.log(`⏱️ File search: ${formatTime(Date.now() - fileSearchStartTime)}`);
 
             if (downloadedFiles.length === 0) {
-                return reject(new Error("No media found in download directory"));
+                return reject(new Error(`No media found for shortcode: ${shortcode}`));
             }
 
-            const mediaPath = downloadedFiles[0];
+            // For videos prioritize .mp4 files, for images take the first one
+            const videoFile = downloadedFiles.find(file => file.endsWith(".mp4"));
+            const mediaPath = pythonOutput.is_video && videoFile ? videoFile : downloadedFiles[0];
+
             console.log(`📂 Downloaded File: ${mediaPath}`);
             
             // Calculate total time
