@@ -149,12 +149,15 @@ async function handleUrlMessage(bot, msg) {
     
     const data = response.data.data;
     
-    // Create keyboard markup with URL
+    // Create keyboard markup with URL - dynamic text based on URL type
     const keyboard = {
       inline_keyboard: [
         [
           {
-            text: 'Watch on YouTube',
+            text: isYoutubeUrl ? '🎬 Watch on YouTube' : 
+                  isPinterestUrl ? '📌 View on Pinterest' :
+                  isInstagramUrl ? '📷 View on Instagram' : 
+                  '🌐 Open Website',
             url: url
           }
         ]
@@ -184,9 +187,29 @@ async function handleUrlMessage(bot, msg) {
       });
     } else {
       // Handle generic/unknown content types
-      await bot.sendMessage(chatId, `✅ Content scraped successfully. Type: ${data.type || 'unknown'}`, {
-        reply_markup: keyboard
-      });
+      let message = '';
+      
+      // Title in bold
+      if (data.title) {
+        message += `*${escapeMarkdown(data.title)}*`; 
+      }
+      
+      // Only add content if it's not a placeholder
+      if (data.content && !data.content.startsWith('Content from')) {
+        message += `\n\n${data.content}`;
+      }
+      
+      // Send message if we have content
+      if (message.trim()) {
+        await sendSafeMessage(bot, chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      } else {
+        await sendSafeMessage(bot, chatId, "Website information retrieved", {
+          reply_markup: keyboard
+        });
+      }
     }
     
   } catch (error) {
@@ -201,54 +224,7 @@ async function handleUrlMessage(bot, msg) {
   }
 }
 
-async function handleMessage(ctx) {
-    const text = ctx.message.text;
-
-    if (!text || !text.startsWith("http")) {
-        return; // Ignore messages that are not URLs
-    }
-
-    ctx.reply("🔄 Downloading...");
-
-    try {
-        const result = await scrapeContent(text);
-
-        // Check if it's an Instagram post (Instaloader saves files in downloads/)
-        const downloadFolder = path.join(__dirname, "../downloads");
-        const files = fs.readdirSync(downloadFolder).map(f => path.join(downloadFolder, f));
-
-        if (files.length === 0) {
-            return ctx.reply("❌ No file found. Something went wrong.");
-        }
-
-        let sentMedia = false; // Track if at least one media file is sent
-
-        // Send downloaded files (photo/video)
-        for (const file of files) {
-            if (file.endsWith(".mp4")) {
-                await ctx.replyWithVideo({ source: file });
-                sentMedia = true;
-            } else if (file.endsWith(".jpg") || file.endsWith(".png")) {
-                await ctx.replyWithPhoto({ source: file });
-                sentMedia = true;
-            }
-        }
-
-        if (!sentMedia) {
-            return ctx.reply("❌ No media found. Please check if the link is correct.");
-        }
-
-        // Cleanup (optional)
-        setTimeout(() => {
-            files.forEach(file => fs.unlinkSync(file));
-        }, 10000); // Wait 10 seconds before deleting files
-
-    } catch (error) {
-        console.error("❌ Failed to download:", error);
-        ctx.reply("❌ Download failed. Please try again.");
-    }
-}
-
+// Add this improved escapeMarkdown function
 function escapeMarkdown(text) {
   if (!text) return '';
   return text
@@ -258,7 +234,24 @@ function escapeMarkdown(text) {
     .replace(/\)/g, '\\)')
     .replace(/\*/g, '\\*')
     .replace(/\_/g, '\\_')
-    .replace(/\`/g, '\\`');
+    .replace(/\`/g, '\\`')
+    .replace(/\~/g, '\\~');
+}
+
+// Add this safe message sending function
+async function sendSafeMessage(bot, chatId, text, options = {}) {
+  try {
+    // Try with original options first
+    return await bot.sendMessage(chatId, text, options);
+  } catch (error) {
+    if (error.message.includes('can\'t parse entities')) {
+      console.log('⚠️ Formatting error, sending without parse_mode');
+      const safeOptions = { ...options };
+      delete safeOptions.parse_mode;
+      return await bot.sendMessage(chatId, text, safeOptions);
+    }
+    throw error;
+  }
 }
 
 function cleanupInstagramText(text) {
@@ -276,4 +269,4 @@ function cleanupInstagramText(text) {
     .trim();
 }
 
-module.exports = { handleUrlMessage, handleMessage };
+module.exports = { handleUrlMessage };
