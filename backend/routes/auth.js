@@ -3,7 +3,6 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const sessionManager = require('../services/sessionManager');
 const pinterestScraper = require('../scraper/pinterestScraper'); // Import the whole module
-const { loginToPinterest } = pinterestScraper; // Extract the function
 console.log('Pinterest module exports:', Object.keys(pinterestScraper));
 const router = express.Router();
 
@@ -82,7 +81,8 @@ router.post('/login/:token', async (req, res) => {
   
   try {
     console.log(`Attempting to login to Pinterest with username: ${username.substring(0, 3)}***`);
-    const loginResult = await loginToPinterest(username, password);
+    // Use the function directly from the module
+    const loginResult = await pinterestScraper.loginToPinterest(username, password);
     
     if (loginResult.success) {
       // Count cookies for debugging
