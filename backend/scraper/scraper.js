@@ -14,7 +14,7 @@ async function scrapeMetadata(url) {
         const page = await browser.newPage();
         
         // Set a navigation timeout (15 seconds)
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 18080 });
 
         // Extract metadata from the page
         const metadata = await page.evaluate(() => {
