@@ -2,8 +2,10 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const sessionManager = require('../services/sessionManager');
-const pinterestScraper = require('../scraper/pinterestScraper'); // Import the whole module
+// Force a fresh import of the Pinterest scraper
+const pinterestScraper = require('../scraper/pinterestScraper.js'); // Add .js extension
 console.log('Pinterest module exports:', Object.keys(pinterestScraper));
+console.log('Login function type:', typeof pinterestScraper.loginToPinterest);
 const router = express.Router();
 
 const DEFAULT_BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
@@ -81,7 +83,18 @@ router.post('/login/:token', async (req, res) => {
   
   try {
     console.log(`Attempting to login to Pinterest with username: ${username.substring(0, 3)}***`);
-    // Use the function directly from the module
+    
+    // Check if function exists
+    if (typeof pinterestScraper.loginToPinterest !== 'function') {
+      console.error('CRITICAL ERROR: loginToPinterest is not a function!');
+      console.error('Available methods:', Object.keys(pinterestScraper));
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Server configuration error: Login function not available' 
+      });
+    }
+    
+    // Use the function with proper error handling
     const loginResult = await pinterestScraper.loginToPinterest(username, password);
     
     if (loginResult.success) {
