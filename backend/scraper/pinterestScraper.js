@@ -1,6 +1,9 @@
 const puppeteer = require('puppeteer');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const sessionManager = require('../services/sessionManager');
+const { captureAuthSession } = require('../utils/pinterest-auth'); // Added import for captureAuthSession
 
 // Streamlined configuration for Pinterest scraping
 const CONFIG = {
@@ -39,6 +42,41 @@ async function checkImageQuality(url) {
     };
   } catch (error) {
     return { exists: false, error: error.message };
+  }
+}
+
+// Added login function from old.js
+async function loginToPinterest(username, password) {
+  try {
+    // Create a temporary session file path
+    const tempSessionPath = path.join(__dirname, '..', '..', 'data', 'temp_session.json');
+    
+    // Use your existing auth function
+    const success = await captureAuthSession(username, password, tempSessionPath);
+    
+    if (!success) {
+      return { 
+        success: false, 
+        error: 'Authentication failed' 
+      };
+    }
+    
+    // Read the session data
+    const sessionData = JSON.parse(fs.readFileSync(tempSessionPath, 'utf8'));
+    
+    // Return in the format expected by auth.js
+    return {
+      success: true,
+      cookies: sessionData.cookies,
+      localStorage: sessionData.localStorage,
+      userAgent: sessionData.userAgent
+    };
+  } catch (error) {
+    console.error('Pinterest login error:', error);
+    return { 
+      success: false, 
+      error: error.message 
+    };
   }
 }
 
@@ -237,4 +275,7 @@ async function scrapePinterest(url, userId = 'default') {
   }
 }
 
-module.exports = { scrapePinterest };
+module.exports = { 
+  scrapePinterest,
+  loginToPinterest  // Added export for the login function
+};
