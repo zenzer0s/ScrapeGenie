@@ -2,8 +2,9 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const sessionManager = require('../services/sessionManager');
-const { loginToPinterest } = require('../scraper/pinterestScraper'); // Ensure this import is correct
-
+const pinterestScraper = require('../scraper/pinterestScraper'); // Import the whole module
+const { loginToPinterest } = pinterestScraper; // Extract the function
+console.log('Pinterest module exports:', Object.keys(pinterestScraper));
 const router = express.Router();
 
 const DEFAULT_BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
