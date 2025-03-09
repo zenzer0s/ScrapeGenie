@@ -4,7 +4,7 @@ const logger = require('./logger');
 const fs = require("fs");
 const path = require("path");
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://0.0.0.0:8080';
 const DOWNLOAD_DIR = "/home/zen/Documents/Pro/ScrapeGenie/downloads";
 
 async function handleUrlMessage(bot, msg) {
