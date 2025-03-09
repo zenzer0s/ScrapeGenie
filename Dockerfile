@@ -29,7 +29,9 @@ ENV NODE_ENV=production \
     SCRAPE_TIMEOUT=30000 \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    NODE_OPTIONS="--max-old-space-size=512"
+    NODE_OPTIONS="--max-old-space-size=512" \
+    # Optimize Chromium performance
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-extensions"
 
 # Copy node modules from builder stage
 COPY --from=builder /app/node_modules ./node_modules
@@ -71,7 +73,11 @@ RUN echo '{\
       "autorestart": true,\
       "max_restarts": 5,\
       "watch": false,\
-      "kill_timeout": 6000\
+      "kill_timeout": 6000,\
+      "node_args": "--max-old-space-size=450",\
+      "env": {\
+        "NODE_ENV": "production"\
+      }\
     },\
     {\
       "name": "bot",\
@@ -81,7 +87,11 @@ RUN echo '{\
       "max_memory_restart": "250M",\
       "autorestart": true,\
       "max_restarts": 5,\
-      "watch": false\
+      "watch": false,\
+      "node_args": "--max-old-space-size=250",\
+      "env": {\
+        "NODE_ENV": "production"\
+      }\
     }\
   ]\
 }' > ecosystem.json

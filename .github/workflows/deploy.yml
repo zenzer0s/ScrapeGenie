@@ -54,14 +54,14 @@ jobs:
       # Build Docker image for GCR
       - name: Build Docker image
         run: |
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
-          docker tag gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+          docker build -t asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker tag asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
 
       # Push Docker image to Google Container Registry
       - name: Push Docker image
         run: |
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+          docker push asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          docker push asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
 
       # Create SSH key for VM access
       - name: Create SSH key
@@ -72,12 +72,19 @@ jobs:
           echo "${{ secrets.VM_SSH_PUBLIC_KEY }}" > ~/.ssh/google_compute_engine.pub
           chmod 600 ~/.ssh/google_compute_engine.pub
 
+      # Create app directories before deployment
+      - name: Create app directories
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
+            mkdir -p ~/app/logs ~/app/data
+          '
+
       # Deploy to VM through SSH
       - name: Deploy to VM
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
             # Pull latest image
-            sudo docker pull gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+            sudo docker pull asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
             
             # Stop and remove existing container if exists
             sudo docker rm -f scrapegenie || true
@@ -99,7 +106,7 @@ jobs:
               -v /home/${{ secrets.VM_USERNAME }}/app/logs:/app/logs \
               -v /home/${{ secrets.VM_USERNAME }}/app/data:/app/data \
               --env-file /tmp/.env \
-              gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+              asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
             
             # Clean up
             rm /tmp/.env
@@ -116,6 +123,12 @@ jobs:
             echo "Container Logs:"
             sudo docker logs --tail 20 scrapegenie
           '
+
+      # Set up Telegram webhook after deployment
+      - name: Configure Telegram Webhook
+        run: |
+          curl -F "url=${{ secrets.VM_PUBLIC_URL }}/webhook" \
+            https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/setWebhook
 
       # Output the deployed VM URL
       - name: Show Output
