@@ -110,7 +110,7 @@ async function scrapePinterest(url, userId = 'default') {
     
     // Wait for images to load
     try {
-      await page.waitForSelector('img[src*="pinimg.com"]', { timeout: 5000 });
+      await page.waitForSelector('img[src*="pinimg.com"]', { timeout: 8080 });
     } catch (error) {
       console.log('Waiting for images timed out, continuing anyway');
     }
