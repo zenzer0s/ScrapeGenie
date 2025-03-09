@@ -1,4 +1,4 @@
-name: Build and Deploy to Cloud Run
+name: Build and Deploy to VM
 
 on:
   push:
@@ -12,7 +12,8 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_LOCATION: asia-south1  # Region set to match deployment
   SERVICE: scrapegenie
-  REGION: asia-south1
+  VM_NAME: ${{ secrets.VM_NAME }}
+  VM_ZONE: ${{ secrets.VM_ZONE }}
 
 jobs:
   build-test-deploy:
@@ -54,35 +55,68 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }} .
+          docker tag asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }} asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:latest
 
       # Push Docker image to Google Artifact Registry
       - name: Push Docker image
         run: |
           docker push asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }}
+          docker push asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:latest
 
-      # Deploy to Cloud Run
-      - name: Deploy to Cloud Run
-        id: deploy
-        uses: google-github-actions/deploy-cloudrun@v1
-        with:
-          service: ${{ env.SERVICE }}
-          region: ${{ env.REGION }}
-          image: asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }}
-          flags: |
-            --concurrency=1
-            --cpu=1
-            --memory=1Gi
-            --set-env-vars=NODE_ENV=production,USE_WEBHOOK=true
-            --set-secrets=TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN_NAME }}:latest
-
-      # Set PUBLIC_URL after deployment
-      - name: Update environment with PUBLIC_URL
+      # Create SSH key for VM access
+      - name: Create SSH key
         run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
-          gcloud run services update ${{ env.SERVICE }} \
-            --region=${{ env.REGION }} \
-            --set-env-vars=PUBLIC_URL=$SERVICE_URL
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/google_compute_engine
+          chmod 600 ~/.ssh/google_compute_engine
+          echo "${{ secrets.VM_SSH_PUBLIC_KEY }}" > ~/.ssh/google_compute_engine.pub
+          chmod 600 ~/.ssh/google_compute_engine.pub
 
-      # Output the deployed URL
+      # Deploy to VM through SSH
+      - name: Deploy to VM
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
+            # Pull latest image
+            sudo docker pull asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:latest
+            
+            # Stop and remove existing container if exists
+            sudo docker rm -f scrapegenie || true
+            
+            # Create .env file
+            cat > /tmp/.env << EOF
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          USE_WEBHOOK=true
+          PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}
+          PORT=8080
+          NODE_ENV=production
+          EOF
+            
+            # Run new container
+            sudo docker run -d \
+              --name scrapegenie \
+              --restart unless-stopped \
+              -p 80:8080 \
+              -v /home/${{ secrets.VM_USERNAME }}/app/logs:/app/logs \
+              -v /home/${{ secrets.VM_USERNAME }}/app/data:/app/data \
+              --env-file /tmp/.env \
+              asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:latest
+            
+            # Clean up
+            rm /tmp/.env
+            sudo docker system prune -f
+          '
+
+      # Verify deployment
+      - name: Verify Deployment
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
+            echo "Container Status:"
+            sudo docker ps | grep scrapegenie
+            
+            echo "Container Logs:"
+            sudo docker logs --tail 20 scrapegenie
+          '
+
+      # Output the deployed VM URL
       - name: Show Output
-        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
+        run: echo "✅ Deployed to ${{ secrets.VM_PUBLIC_URL }}"

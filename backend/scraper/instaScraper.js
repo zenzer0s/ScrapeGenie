@@ -24,6 +24,7 @@ async function fetchInstagramPost(url) {
         
         const pythonStartTime = Date.now();
         const pythonPath = "/usr/bin/python3";
+        //const pythonPath = "/home/zen/Documents/Pro/ScrapeGenie/backend/venv/bin/python3";
         const command = `${pythonPath} "${scriptPath}" "${url}" "${downloadDir}"`;
         
         console.log(`🚀 Running Python process...`);
