@@ -25,6 +25,8 @@ dirs.forEach(dir => {
 console.log("🔍 Environment check:");
 console.log(`• BACKEND_URL: ${process.env.BACKEND_URL}`);
 console.log(`• PORT: ${process.env.PORT}`);
+console.log(`• USE_WEBHOOK: ${process.env.USE_WEBHOOK}`);
+console.log(`• PUBLIC_URL: ${process.env.PUBLIC_URL || 'Not set'}`);
 
 if (!process.env.BACKEND_URL) {
   console.error("⚠️ BACKEND_URL is not set! Setting default value...");
@@ -37,6 +39,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { Telegraf } = require("telegraf");
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
+const express = require('express');
 const { 
   startCommand, 
   helpCommand, 
@@ -54,6 +57,11 @@ axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 8000}`;
+const PORT = process.env.PORT || 8080;
+
+// Webhook configuration
+const USE_WEBHOOK = process.env.USE_WEBHOOK === 'true';
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
 
 if (!token) {
   console.error("❌ Telegram Bot Token not found! Check your .env file.");
@@ -61,14 +69,67 @@ if (!token) {
   process.exit(1);
 }
 
+if (USE_WEBHOOK && !PUBLIC_URL) {
+  console.warn("⚠️ USE_WEBHOOK is true but PUBLIC_URL is not set. Webhook setup may fail.");
+  logger.warn("USE_WEBHOOK is true but PUBLIC_URL is not set. Webhook setup may fail.");
+}
+
+// Create Express app for webhook mode
+const app = express();
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send({ status: 'ok', timestamp: new Date() });
+});
+
 // Check if we should use the Telegraf implementation or the traditional one
 const USE_TELEGRAF = process.env.USE_TELEGRAF === 'true';
+
+let bot;
+let telegrafBot;
 
 if (USE_TELEGRAF) {
   // ===== TELEGRAF IMPLEMENTATION =====
   console.log("🔄 Using Telegraf implementation");
   
-  const telegrafBot = new Telegraf(token);
+  if (USE_WEBHOOK) {
+    telegrafBot = new Telegraf(token);
+    
+    // Set up webhook
+    if (PUBLIC_URL) {
+      const webhookPath = `/telegraf-webhook/${token}`;
+      const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
+      
+      // Setup webhook endpoint
+      app.use(telegrafBot.webhookCallback(webhookPath));
+      
+      // Start the Express server
+      app.listen(PORT, () => {
+        console.log(`🚀 Webhook server running on port ${PORT}`);
+        // Set webhook in Telegram
+        telegrafBot.telegram.setWebhook(webhookUrl)
+          .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
+          .catch(err => {
+            console.error(`❌ Failed to set webhook: ${err}`);
+            logger.error(`Failed to set webhook: ${err}`);
+          });
+      });
+    } else {
+      console.error("❌ Public URL not provided for webhook mode");
+      logger.error("Public URL not provided for webhook mode");
+      process.exit(1);
+    }
+  } else {
+    // Polling mode
+    telegrafBot = new Telegraf(token);
+    telegrafBot.launch()
+      .then(() => console.log("🤖 Telegraf bot is running in polling mode..."))
+      .catch(err => {
+        console.error(`❌ Failed to start bot: ${err}`);
+        logger.error(`Failed to start bot: ${err}`);
+      });
+  }
   
   // Handle basic commands
   telegrafBot.start((ctx) => ctx.reply("Welcome! Send me a URL to download content"));
@@ -95,10 +156,6 @@ if (USE_TELEGRAF) {
     console.error(`Telegraf error for ${ctx.updateType}:`, err);
   });
   
-  // Start the bot
-  telegrafBot.launch();
-  console.log("🤖 Telegraf bot is running...");
-  
   // Enable graceful stop
   process.once('SIGINT', () => telegrafBot.stop('SIGINT'));
   process.once('SIGTERM', () => telegrafBot.stop('SIGTERM'));
@@ -107,7 +164,46 @@ if (USE_TELEGRAF) {
   // ===== NODE-TELEGRAM-BOT-API IMPLEMENTATION =====
   console.log("🔄 Using node-telegram-bot-api implementation");
   
-  const bot = new TelegramBot(token, { polling: true });
+  if (USE_WEBHOOK) {
+    // Webhook configuration
+    if (PUBLIC_URL) {
+      const webhookPath = `/bot${token}`;
+      const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
+      
+      bot = new TelegramBot(token, { webHook: { port: PORT } });
+      
+      // Set the webhook
+      bot.setWebHook(webhookUrl)
+        .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
+        .catch(err => {
+          console.error(`❌ Failed to set webhook: ${err}`);
+          logger.error(`Failed to set webhook: ${err}`);
+        });
+      
+      // Endpoint for webhook
+      app.post(webhookPath, (req, res) => {
+        bot.processUpdate(req.body);
+        res.sendStatus(200);
+      });
+      
+      // If not started via setWebHook, start the Express server
+      if (!app.listening) {
+        app.listen(PORT, () => {
+          console.log(`🚀 Webhook server running on port ${PORT}`);
+        });
+      }
+      
+      console.log("🤖 Bot is running in webhook mode...");
+    } else {
+      console.error("❌ Public URL not provided for webhook mode");
+      logger.error("Public URL not provided for webhook mode");
+      process.exit(1);
+    }
+  } else {
+    // Polling mode
+    bot = new TelegramBot(token, { polling: true });
+    console.log("🚀 Bot is running in polling mode...");
+  }
   
   // Register command handlers
   bot.onText(/\/start/, (msg) => startCommand(bot, msg));
@@ -134,8 +230,6 @@ if (USE_TELEGRAF) {
   bot.on('message', async (msg) => {
     await handleUrlMessage(bot, msg);
   });
-  
-  console.log("🚀 Bot is running...");
 }
 
 // Check backend status function
