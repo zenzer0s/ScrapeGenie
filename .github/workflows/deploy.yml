@@ -49,7 +49,7 @@ jobs:
       # Configure Docker to use gcloud as a credential helper
       - name: Auth Docker
         run: |
-          gcloud auth configure-docker asia.gcr.io --quiet
+          gcloud auth configure-docker asia-south1-docker.pkg.dev
 
       # Build Docker image
       - name: Build Docker image
