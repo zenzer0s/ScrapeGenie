@@ -6,11 +6,10 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    # Manual trigger
-
+    
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_LOCATION: asia-south1  # Region set to match deployment
+  GAR_LOCATION: asia-south1
   SERVICE: scrapegenie
   VM_NAME: ${{ secrets.VM_NAME }}
   VM_ZONE: ${{ secrets.VM_ZONE }}
@@ -36,7 +35,6 @@ jobs:
       - name: Run tests
         run: npm test || echo "No tests specified"
 
-      # Authenticate with Google Cloud
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v1
         with:
@@ -47,24 +45,24 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # Configure Docker to use gcloud as a credential helper
-      - name: Auth Docker
-        run: gcloud auth configure-docker --quiet
-
-      # Build Docker image for GCR
-      - name: Build Docker image
+      - name: Create Artifact Registry Repository (if not exists)
         run: |
-          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
-          docker tag gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+          gcloud artifacts repositories create ${{ env.SERVICE }} \
+            --repository-format=docker \
+            --location=${{ env.GAR_LOCATION }} \
+            --description="Repository for ${{ env.SERVICE }}" || echo "Repository already exists"
 
-      # Push Docker image to Google Container Registry
-      - name: Push Docker image
+      - name: Auth Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+      - name: Build & Push Docker Image
         run: |
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
-          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker tag ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:${{ github.sha }} \
+                    ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
+          docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }} --all-tags
 
-      # Create SSH key for VM access
-      - name: Create SSH key
+      - name: Create SSH Key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/google_compute_engine
@@ -72,64 +70,40 @@ jobs:
           echo "${{ secrets.VM_SSH_PUBLIC_KEY }}" > ~/.ssh/google_compute_engine.pub
           chmod 600 ~/.ssh/google_compute_engine.pub
 
-      # Create app directories before deployment
-      - name: Create app directories
-        run: |
-          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
-            mkdir -p ~/app/logs ~/app/data
-          '
-
-      # Deploy to VM through SSH
       - name: Deploy to VM
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
-            # Pull latest image
-            sudo docker pull gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
-            
-            # Stop and remove existing container if exists
+            sudo docker pull ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
             sudo docker rm -f scrapegenie || true
-            
-            # Create .env file
-            cat > /tmp/.env << EOF
-          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-          USE_WEBHOOK=true
-          PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}
-          PORT=8080
-          NODE_ENV=production
-          EOF
-            
-            # Run new container
-            sudo docker run -d \
-              --name scrapegenie \
-              --restart unless-stopped \
+            echo "Creating .env file..."
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /tmp/.env
+            echo "USE_WEBHOOK=true" >> /tmp/.env
+            echo "PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}" >> /tmp/.env
+            echo "PORT=8080" >> /tmp/.env
+            echo "NODE_ENV=production" >> /tmp/.env
+            sudo docker run -d --name scrapegenie --restart unless-stopped \
               -p 80:8080 \
               -v /home/${{ secrets.VM_USERNAME }}/app/logs:/app/logs \
               -v /home/${{ secrets.VM_USERNAME }}/app/data:/app/data \
               --env-file /tmp/.env \
-              gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
-            
-            # Clean up
+              ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
             rm /tmp/.env
             sudo docker system prune -f
           '
 
-      # Verify deployment
       - name: Verify Deployment
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
             echo "Container Status:"
-            sudo docker ps | grep scrapegenie
-            
+            sudo docker ps | grep scrapegenie || echo "ScrapeGenie is not running!"
             echo "Container Logs:"
-            sudo docker logs --tail 20 scrapegenie
+            sudo docker logs --tail 20 scrapegenie || echo "No logs available."
           '
 
-      # Set up Telegram webhook after deployment
       - name: Configure Telegram Webhook
         run: |
-          curl -F "url=${{ secrets.VM_PUBLIC_URL }}/webhook" \
+          curl -F "url=https://${{ secrets.VM_PUBLIC_URL }}/webhook" \
             https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/setWebhook
 
-      # Output the deployed VM URL
       - name: Show Output
-        run: echo "✅ Deployed to ${{ secrets.VM_PUBLIC_URL }}"
+        run: echo "✅ Deployed to https://${{ secrets.VM_PUBLIC_URL }}"
