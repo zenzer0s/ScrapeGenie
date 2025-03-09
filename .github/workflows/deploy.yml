@@ -10,7 +10,7 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_LOCATION: asia-south1  # Changed to asia-south1 to match your region
+  GAR_LOCATION: asia-south1  # Region set to match deployment
   SERVICE: scrapegenie
   REGION: asia-south1
 
@@ -35,18 +35,21 @@ jobs:
       - name: Run tests
         run: npm test || echo "No tests specified"
 
-      # Setup gcloud CLI
+      # Updated authentication approach
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
-          export_default_credentials: true
 
       # Configure Docker to use gcloud as a credential helper
       - name: Auth Docker
         run: |
-          gcloud auth configure-docker asia.gcr.io
+          gcloud auth configure-docker asia.gcr.io --quiet
 
       # Build Docker image
       - name: Build Docker image
