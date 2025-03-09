@@ -30,7 +30,7 @@ console.log(`• PUBLIC_URL: ${process.env.PUBLIC_URL || 'Not set'}`);
 
 if (!process.env.BACKEND_URL) {
   console.error("⚠️ BACKEND_URL is not set! Setting default value...");
-  process.env.BACKEND_URL = `http://localhost:${process.env.PORT || 5000}`;
+  process.env.BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
   console.log(`• BACKEND_URL (default): ${process.env.BACKEND_URL}`);
 }
 
@@ -56,7 +56,7 @@ const logger = require('./logger');
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${process.env.PORT || 8000}`;
+const BACKEND_URL = process.env.BACKEND_URL || `http://0.0.0.0:${process.env.PORT || 8000}`;
 const PORT = process.env.PORT || 8080;
 
 // Webhook configuration
