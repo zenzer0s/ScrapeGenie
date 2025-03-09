@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid'); // Add this line
 
 // Create an axios instance with the base URL
 const axiosInstance = axios.create({
-  baseURL: process.env.BACKEND_URL || 'http://localhost:5000',
+  baseURL: process.env.BACKEND_URL || 'http://0.0.0.0:8080',
   timeout: 10000
 });
 
