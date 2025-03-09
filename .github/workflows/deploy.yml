@@ -35,7 +35,7 @@ jobs:
       - name: Run tests
         run: npm test || echo "No tests specified"
 
-      # Updated authentication approach
+      # Authenticate with Google Cloud
       - name: Authenticate with Google Cloud
         uses: google-github-actions/auth@v1
         with:
@@ -46,20 +46,19 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # Configure Docker to use gcloud as a credential helper
+      # Configure Docker to use gcloud as a credential helper for Artifact Registry
       - name: Auth Docker
-        run: |
-          gcloud auth configure-docker asia-south1-docker.pkg.dev
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev
 
-      # Build Docker image
+      # Build Docker image with Artifact Registry URL
       - name: Build Docker image
         run: |
-          docker build -t asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker build -t asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }} .
 
-      # Push Docker image to Google Container Registry
+      # Push Docker image to Google Artifact Registry
       - name: Push Docker image
         run: |
-          docker push asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          docker push asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }}
 
       # Deploy to Cloud Run
       - name: Deploy to Cloud Run
@@ -68,7 +67,7 @@ jobs:
         with:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
-          image: asia.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{ github.sha }}
+          image: asia-south1-docker.pkg.dev/${{ env.PROJECT_ID }}/scrapegenie/${{ env.SERVICE }}:${{ github.sha }}
           flags: |
             --concurrency=1
             --cpu=1
