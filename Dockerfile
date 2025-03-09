@@ -56,7 +56,7 @@ EXPOSE 8080
 
 # Health check for Cloud Run
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT}/health || exit 1
+  CMD curl -f http://0.0.0.0:${PORT}/health || exit 1
 
 # Install PM2 and clean npm cache
 RUN npm install -g pm2 --silent && npm cache clean --force
