@@ -76,18 +76,18 @@ jobs:
             sudo docker pull ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
             sudo docker rm -f scrapegenie || true
             echo "Creating .env file..."
-            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /tmp/.env
-            echo "USE_WEBHOOK=true" >> /tmp/.env
-            echo "PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}" >> /tmp/.env
-            echo "PORT=8080" >> /tmp/.env
-            echo "NODE_ENV=production" >> /tmp/.env
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/zen/.env
+            echo "USE_WEBHOOK=false" >> /home/zen/.env
+            echo "PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}" >> /home/zen/.env
+            echo "BACKEND_URL=${{ secrets.VM_PUBLIC_URL }}" >> /home/zen/.env
+            echo "PORT=8080" >> /home/zen/.env
+            echo "NODE_ENV=production" >> /home/zen/.env
             sudo docker run -d --name scrapegenie --restart unless-stopped \
               -p 80:8080 \
               -v /home/${{ secrets.VM_USERNAME }}/app/logs:/app/logs \
               -v /home/${{ secrets.VM_USERNAME }}/app/data:/app/data \
-              --env-file /tmp/.env \
+              --env-file /home/zen/.env \
               ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
-            rm /tmp/.env
             sudo docker system prune -f
           '
 
