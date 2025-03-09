@@ -1,4 +1,23 @@
 node_modules  
 .env  
 .git  
-logs  
+logs
+
+# Additional recommended entries
+npm-debug.log
+npm-error.log
+*.log
+.vscode
+.idea
+.github
+Dockerfile
+.dockerignore
+*.md
+!README.md
+data/sessions
+.DS_Store
+coverage
+.nyc_output
+**/dist
+**/build
+**/tmp
