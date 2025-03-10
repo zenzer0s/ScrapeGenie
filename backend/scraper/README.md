@@ -1,33 +1,35 @@
-### **README for Scraper (`backend/scraper/README.md`)**
-
-```markdown
 # ScrapeGenie Scraper
 
-The `scraper` module in ScrapeGenie is responsible for extracting data from various online sources such as YouTube, Instagram, and general websites. It utilizes Puppeteer for browser-based scraping and Axios for API-based extraction where applicable.
+The `scraper` module in ScrapeGenie is responsible for extracting data from various online sources such as YouTube, Instagram, Pinterest, and general websites. It utilizes Puppeteer for browser-based scraping and Axios for API-based extraction where applicable.
 
 ## **Features**
 - **Modular Scrapers:**  
   - YouTube scraper (`ytScraper.js`)  
-  - Instagram scraper (`instaScraper.js`)  
+  - Instagram scraper (`instaScraper.js`) 
+  - Pinterest scraper (`pinterestScraper.js`)
   - General website metadata scraper (`metadata.js`)
 - **Browser Management:**  
-  - Uses a shared Puppeteer browser instance for efficiency.
-  - Limits concurrent scrapers to reduce resource usage.
+  - Uses a shared Puppeteer browser instance for efficiency via `browserManager.js`
+  - Manages different scraper instances with `scraperManager.js`
 - **Optimized Extraction:**  
-  - Selects only necessary DOM elements to reduce processing time.
-  - Blocks unnecessary resources (optional, for performance).
+  - Selects only necessary DOM elements to reduce processing time
+  - Advanced handling for platform-specific content
 
 ---
 
 ## **Project Structure**
 ```
 scraper/
-├── browserManager.js  # Manages Puppeteer instance (singleton browser for efficiency)
-├── helpers.js         # Helper functions shared across scrapers
-├── instaScraper.js    # Scrapes Instagram posts & reels
-├── metadata.js        # Extracts title, description, and metadata from websites
-├── scraper.js         # (If additional scraping logic exists)
-└── ytScraper.js       # Scrapes YouTube video details
+├── browserManager.js    # Manages Puppeteer browser instances
+├── helpers.js           # Helper functions for scrapers
+├── instaDownloader.py   # Python script for Instagram downloads
+├── instaScraper.js      # Instagram-specific scraper
+├── metadata.js          # General website metadata scraper
+├── pinterestScraper.js  # Pinterest-specific scraper
+├── README.md            # This documentation file
+├── scraper.js           # Core scraping logic
+├── scraperManager.js    # Manages different scraper instances
+└── ytScraper.js         # YouTube-specific scraper
 ```
 
 ---
@@ -48,7 +50,7 @@ Used internally by all scrapers when they require a Puppeteer page.
 🔹 **Purpose:**  
 Fetches YouTube video details (title, thumbnail, etc.).  
 🔹 **How It Works:**  
-- Uses YouTube’s Open Graph metadata (`og:title`, `og:image`) for quick scraping.  
+- Uses YouTube's Open Graph metadata (`og:title`, `og:image`) for quick scraping.  
 - If metadata is unavailable, falls back to Puppeteer for HTML-based scraping.  
 🔹 **Data Extracted:**  
 - ✅ Video Title  
@@ -71,7 +73,8 @@ Fetches YouTube video details (title, thumbnail, etc.).
 Extracts details from Instagram posts and reels.  
 🔹 **How It Works:**  
 - Uses Puppeteer to load Instagram posts since they require authentication.  
-- Extracts media URL and captions while ignoring unnecessary data (e.g., likes, comments).  
+- Extracts media URL and captions while ignoring unnecessary data.
+- Works with `instaDownloader.py` for specialized media extraction tasks.
 🔹 **Data Extracted:**  
 - ✅ Caption  
 - ✅ Media URL (image or video)  
@@ -89,7 +92,30 @@ Extracts details from Instagram posts and reels.
 
 ---
 
-### **4️⃣ metadata.js (General Website Scraper)**
+### **4️⃣ pinterestScraper.js (Pinterest Scraper)**
+🔹 **Purpose:**  
+Extracts Pinterest images and pin details.  
+🔹 **How It Works:**  
+- Authenticates using `pinterest-auth.js` utilities when needed.
+- Extracts high-quality image versions of pins.
+- Handles both public pins and boards.
+🔹 **Data Extracted:**  
+- ✅ Pin Title/Description  
+- ✅ High-resolution Image URL  
+- ✅ Original Pin URL  
+🔹 **Example Response:**
+```json
+{
+  "title": "Modern Interior Design Ideas",
+  "mediaUrl": "https://i.pinimg.com/originals/XX/YY/ZZ.jpg",
+  "originalUrl": "https://www.pinterest.com/pin/123456789012345678/",
+  "type": "pinterest"
+}
+```
+
+---
+
+### **5️⃣ metadata.js (General Website Scraper)**
 🔹 **Purpose:**  
 Fetches metadata (title, description, and preview) from general websites.  
 🔹 **How It Works:**  
@@ -109,6 +135,18 @@ Fetches metadata (title, description, and preview) from general websites.
   "type": "website"
 }
 ```
+
+---
+
+### **6️⃣ scraperManager.js**
+🔹 **Purpose:**  
+Manages different scraper instances and their allocation.
+🔹 **Key Features:**  
+- Dynamically selects the appropriate scraper based on URL patterns.
+- Handles scraper lifecycle and resource management.
+- Implements fallback mechanisms when primary extraction methods fail.
+🔹 **Usage:**  
+Used by the main API routes to coordinate scraping activities.
 
 ---
 
@@ -136,11 +174,17 @@ curl -X POST http://localhost:5000/api/scrape -H "Content-Type: application/json
 ✅ **Reused Browser Instance:**  
 All scrapers share a single Puppeteer instance via `browserManager.js` to reduce CPU/memory usage.
 
+✅ **Scraper Management:**  
+`scraperManager.js` efficiently allocates resources for different scraper types.
+
 ✅ **Efficient Selectors:**  
 Each scraper extracts only the necessary elements to minimize processing time.
 
 ✅ **Fallback Handling:**  
 If metadata is missing, scrapers use alternative strategies to fetch data.
+
+✅ **Python Integration:**  
+Uses specialized Python scripts for tasks better suited to Python libraries.
 
 ---
 
@@ -149,10 +193,13 @@ If metadata is missing, scrapers use alternative strategies to fetch data.
 Consider running Puppeteer in headless mode for additional performance gains.
 
 🚀 **Asynchronous Queue:**  
-A job queue (e.g., Bull.js) could manage concurrent scraping requests for better load management.
+A job queue could manage concurrent scraping requests for better load management.
 
 🚀 **Enhanced Error Handling:**  
-Logging and monitoring tools (like Sentry) could be added to track failures.
+Logging and monitoring tools could be added to track failures.
+
+🚀 **Caching System:**  
+Implement caching to reduce redundant scraping of frequently accessed content.
 
 ---
 

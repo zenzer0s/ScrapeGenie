@@ -1,58 +1,100 @@
-# Use a smaller Node.js image
-FROM node:18-alpine AS builder  
+# Build stage
+FROM node:18-bullseye-slim AS builder
+WORKDIR /app
 
-WORKDIR /app  
+# Copy package files for npm install caching
+COPY package*.json ./
 
-# Install dependencies for Puppeteer
-RUN apk add --no-cache \
+# Install production dependencies only
+RUN npm ci --only=production --no-optional
+
+# Final stage
+FROM node:18-bullseye-slim
+WORKDIR /app
+
+# Install minimal dependencies in a single layer to reduce image size
+RUN apt-get update && apt-get install -y \
     chromium \
-    harfbuzz \
+    curl \
     ca-certificates \
-    nss \
-    freetype \
-    ttf-freefont \
-    font-noto \
-    font-noto-cjk \
-    font-noto-emoji \
-    font-noto-extra
+    python3 python3-pip \
+    --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ~/.cache/* && \
+    apt-get clean
 
-# Copy package files first (better caching)
-COPY package*.json ./  
+# Set environment variables
+ENV NODE_ENV=production \
+    PORT=8080 \
+    MAX_BROWSER_INSTANCES=1 \
+    SCRAPE_TIMEOUT=30000 \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    NODE_OPTIONS="--max-old-space-size=512" \
+    # Optimize Chromium performance
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-extensions"
 
-# Install only production dependencies
-RUN npm install --production  
+# Copy node modules from builder stage
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy all source files
-COPY . .  
+# Install specific Python packages without caching pip
+COPY backend/scraper/requirements.txt ./
+RUN timeout 60s pip3 install --no-cache-dir -r requirements.txt || \
+    pip3 install --no-cache-dir requests beautifulsoup4 instaloader && \
+    rm -f requirements.txt
 
-# Remove unnecessary dev dependencies (optional)
-RUN npm prune --production  
+# Copy only necessary application files
+COPY bot ./bot
+COPY backend ./backend
+COPY example.env ./.env.example
 
-# Final lightweight image
-FROM node:18-alpine  
+# Create necessary directories with proper permissions
+RUN mkdir -p logs data/sessions downloads && \
+    chmod -R 755 logs data downloads
 
-WORKDIR /app  
+# Expose the port
+EXPOSE 8080
 
-# Install Chromium again in the final container
-RUN apk add --no-cache \
-    chromium \
-    harfbuzz \
-    ca-certificates \
-    nss \
-    freetype \
-    ttf-freefont \
-    font-noto \
-    font-noto-cjk \
-    font-noto-emoji \
-    font-noto-extra
+# Health check for Cloud Run
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://0.0.0.0:${PORT}/health || exit 1
 
-# Set Puppeteer environment variables
-ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium-browser"
-ENV PUPPETEER_SKIP_DOWNLOAD="true"
+# Install PM2 and clean npm cache
+RUN npm install -g pm2 --silent && npm cache clean --force
 
-# Copy only necessary files from the builder stage
-COPY --from=builder /app /app  
+# Create optimized PM2 ecosystem file
+RUN echo '{\
+  "apps": [\
+    {\
+      "name": "server",\
+      "script": "./backend/server.js",\
+      "instances": 1,\
+      "exec_mode": "fork",\
+      "max_memory_restart": "450M",\
+      "autorestart": true,\
+      "max_restarts": 5,\
+      "watch": false,\
+      "kill_timeout": 6000,\
+      "node_args": "--max-old-space-size=450",\
+      "env": {\
+        "NODE_ENV": "production"\
+      }\
+    },\
+    {\
+      "name": "bot",\
+      "script": "./bot/bot.js",\
+      "instances": 1,\
+      "exec_mode": "fork",\
+      "max_memory_restart": "250M",\
+      "autorestart": true,\
+      "max_restarts": 5,\
+      "watch": false,\
+      "node_args": "--max-old-space-size=250",\
+      "env": {\
+        "NODE_ENV": "production"\
+      }\
+    }\
+  ]\
+}' > ecosystem.json
 
-EXPOSE 8000  
-
-CMD ["sh", "-c", "node backend/server.js & node bot/bot.js && wait"]
+# Start application with PM2
+CMD ["pm2-runtime", "ecosystem.json"]

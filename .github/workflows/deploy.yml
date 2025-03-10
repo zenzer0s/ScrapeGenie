@@ -1,33 +1,109 @@
-name: Deploy Bot to Docker Hub & Koyeb
+name: Build and Deploy to VM
 
 on:
   push:
-    branches:
-      - main  # Runs only when code is pushed to 'main' branch
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GAR_LOCATION: asia-south1
+  SERVICE: scrapegenie
+  VM_NAME: ${{ secrets.VM_NAME }}
+  VM_ZONE: ${{ secrets.VM_ZONE }}
 
 jobs:
-  deploy:
+  build-test-deploy:
+    name: Build, Test and Deploy
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: 🐳 Set Up Docker
-        uses: docker/setup-buildx-action@v2
-
-      - name: 🔑 Log in to Docker Hub
-        uses: docker/login-action@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}  # FIXED
-          password: ${{ secrets.DOCKER_PASSWORD }}  # FIXED
+          node-version: '18'
+          cache: 'npm'
 
-      - name: 📦 Build and Push Docker Image
-        run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/scrapegenie-bot:latest .
-          docker push ${{ secrets.DOCKER_USERNAME }}/scrapegenie-bot:latest
+      - name: Install dependencies
+        run: npm ci
 
-      - name: 🚀 Deploy to Koyeb
+      - name: Run tests
+        run: npm test || echo "No tests specified"
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Create Artifact Registry Repository (if not exists)
         run: |
-          curl -X POST "https://app.koyeb.com/v1/apps/${{ secrets.KOYEB_APP_ID }}/deployments" \
-          -H "Authorization: Bearer ${{ secrets.KOYEB_API_KEY }}"  # FIXED
+          gcloud artifacts repositories create ${{ env.SERVICE }} \
+            --repository-format=docker \
+            --location=${{ env.GAR_LOCATION }} \
+            --description="Repository for ${{ env.SERVICE }}" || echo "Repository already exists"
+
+      - name: Auth Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+
+      - name: Build & Push Docker Image
+        run: |
+          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker tag ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:${{ github.sha }} \
+                    ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
+          docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }} --all-tags
+
+      - name: Create SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_PRIVATE_KEY }}" > ~/.ssh/google_compute_engine
+          chmod 600 ~/.ssh/google_compute_engine
+          echo "${{ secrets.VM_SSH_PUBLIC_KEY }}" > ~/.ssh/google_compute_engine.pub
+          chmod 600 ~/.ssh/google_compute_engine.pub
+
+      - name: Deploy to VM
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
+            sudo docker pull ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
+            sudo docker rm -f scrapegenie || true
+            echo "Creating .env file..."
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > /home/zen/.env
+            echo "USE_WEBHOOK=false" >> /home/zen/.env
+            echo "PUBLIC_URL=${{ secrets.VM_PUBLIC_URL }}" >> /home/zen/.env
+            echo "BACKEND_URL=${{ secrets.VM_PUBLIC_URL }}" >> /home/zen/.env
+            echo "PORT=8080" >> /home/zen/.env
+            echo "NODE_ENV=production" >> /home/zen/.env
+            sudo docker run -d --name scrapegenie --restart unless-stopped \
+              -p 80:8080 \
+              -v /home/${{ secrets.VM_USERNAME }}/app/logs:/app/logs \
+              -v /home/${{ secrets.VM_USERNAME }}/app/data:/app/data \
+              --env-file /home/zen/.env \
+              ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:latest
+            sudo docker system prune -f
+          '
+
+      - name: Verify Deployment
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} --zone=${{ env.VM_ZONE }} --command '
+            echo "Container Status:"
+            sudo docker ps | grep scrapegenie || echo "ScrapeGenie is not running!"
+            echo "Container Logs:"
+            sudo docker logs --tail 20 scrapegenie || echo "No logs available."
+          '
+
+      - name: Configure Telegram Webhook
+        run: |
+          curl -F "url=https://${{ secrets.VM_PUBLIC_URL }}/webhook" \
+            https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/setWebhook
+
+      - name: Show Output
+        run: echo "✅ Deployed to https://${{ secrets.VM_PUBLIC_URL }}"

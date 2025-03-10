@@ -82,7 +82,7 @@ stop_services() {
 # Monitor user input for "STOP" command
 while true; do
     read -r -p "⌨️  Type 'STOP' to stop services: " input
-    if [[ "$input" == "STOP" ]]; then
+    if [[ "$input" == "l" ]]; then
         stop_services
     else
         echo "❌ Invalid command. Type 'STOP' to exit."
