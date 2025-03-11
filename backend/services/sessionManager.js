@@ -113,10 +113,20 @@ function touchSession(userId) {
   return false;
 }
 
+/**
+ * Gets the path to a user's session file
+ * @param {string} userId - Telegram user ID
+ * @returns {string} - Path to the session file
+ */
+function getSessionPath(userId) {
+  return path.join(SESSIONS_DIR, `${userId}.json`);
+}
+
 module.exports = {
   saveSession,
   getSession,
   deleteSession,
   sessionNeedsRefresh,
-  touchSession
+  touchSession,
+  getSessionPath  // Add this line
 };
