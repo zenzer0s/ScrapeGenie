@@ -40,53 +40,42 @@ jobs:
 
       - name: Deploy to VM
         run: |
-          gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command "
-            # Create temporary .env file
-            cat > ~/temp_env << 'ENVFILE'
-            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-            USE_WEBHOOK=false
-            PUBLIC_URL=http://${{ env.SERVER_IP }}:8080
-            BACKEND_URL=http://${{ env.SERVER_IP }}:8080
-            PORT=8080
-            NODE_ENV=production
-            PYTHON_PATH=/usr/bin/python3
-            ENVFILE
+          gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command '
+            # Create directories and ensure proper permissions
+            mkdir -p ~/app/logs ~/app/data
+            chmod -R 755 ~/app/logs ~/app/data
             
-            # Create directories with sudo if needed
-            sudo mkdir -p ~/app/logs
-            sudo mkdir -p ~/app/data
-            
-            # Move the .env file with sudo
-            sudo mv ~/temp_env ~/app/.env
-            sudo chown \$(whoami):\$(whoami) ~/app/.env
-            sudo chmod 600 ~/app/.env
+            # Create .env file (simpler approach)
+            echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > ~/app/.env
+            echo "USE_WEBHOOK=false" >> ~/app/.env
+            echo "PUBLIC_URL=http://${{ env.SERVER_IP }}:8080" >> ~/app/.env
+            echo "BACKEND_URL=http://${{ env.SERVER_IP }}:8080" >> ~/app/.env
+            echo "PORT=8080" >> ~/app/.env
+            echo "NODE_ENV=production" >> ~/app/.env
+            echo "PYTHON_PATH=/usr/bin/python3" >> ~/app/.env
             
             # Pull the latest Docker image
-            sudo docker pull $DOCKER_HUB_REPO:latest
+            sudo docker pull ${{ env.DOCKER_HUB_REPO }}:latest
             
             # Stop existing container if running
-            sudo docker rm -f scrapegenie || true
+            sudo docker stop scrapegenie || true
+            sudo docker rm scrapegenie || true
             
-            # Start new container
-            sudo docker run -d --name scrapegenie --restart unless-stopped \\
-              -p 8080:8080 \\
-              -v ~/app/logs:/app/logs \\
-              -v ~/app/data:/app/data \\
-              --env-file ~/app/.env \\
-              $DOCKER_HUB_REPO:latest
+            # Start new container with explicit command (no line breaks)
+            sudo docker run -d --name scrapegenie --restart unless-stopped -p 8080:8080 -v ~/app/logs:/app/logs -v ~/app/data:/app/data --env-file ~/app/.env ${{ env.DOCKER_HUB_REPO }}:latest
             
             # Clean up unused Docker resources
             sudo docker system prune -f
-          "
+          '
 
       - name: Verify Deployment
         run: |
-          gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command "
-            echo \"Container Status:\"
-            sudo docker ps | grep scrapegenie || echo \"ScrapeGenie is not running!\"
-            echo \"Container Logs:\"
-            sudo docker logs --tail 20 scrapegenie || echo \"No logs available.\"
-          "
+          gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command '
+            echo "Container Status:"
+            sudo docker ps | grep scrapegenie || echo "ScrapeGenie is not running!"
+            echo "Container Logs:"
+            sudo docker logs --tail 20 scrapegenie || echo "No logs available."
+          '
 
       - name: Show Output
         run: |
