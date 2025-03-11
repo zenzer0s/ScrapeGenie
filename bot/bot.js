@@ -230,6 +230,43 @@ if (USE_TELEGRAF) {
   bot.on('message', async (msg) => {
     await handleUrlMessage(bot, msg);
   });
+
+  // Setup callback query handler
+  bot.on('callback_query', async (callbackQuery) => {
+    const action = callbackQuery.data;
+    const msg = callbackQuery.message;
+    const chatId = msg.chat.id;
+    
+    // Acknowledge the callback
+    await bot.answerCallbackQuery(callbackQuery.id);
+    
+    // Process the action
+    switch (action) {
+      case 'start':
+        await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      case 'help':
+        await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      case 'status':
+        await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
+        break;
+      case 'usage':
+        await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      case 'pinterest_login':
+        await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      case 'pinterest_logout':
+        await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      case 'pinterest_status':
+        await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+        break;
+      default:
+        await bot.sendMessage(chatId, "Unknown command");
+    }
+  });
 }
 
 // Check backend status function
