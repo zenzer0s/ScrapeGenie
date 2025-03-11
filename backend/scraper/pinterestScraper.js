@@ -89,10 +89,20 @@ async function scrapePinterest(url, userId = 'default') {
     return { success: false, error: 'Invalid userId. Please provide a valid userId.' };
   }
 
+  // Check if session exists for this user
+  console.log(`Looking for session file: ${sessionManager.getSessionPath(userId)}`);
   const session = sessionManager.getSession(userId);
   
   if (!session || !session.cookies || session.cookies.length === 0) {
-    return { success: false, error: 'No valid session found. Please log in to Pinterest first.' };
+    console.log(`No session file found for user ${userId}`);
+    return { 
+      success: false, 
+      error: 'No valid session found. Please log in to Pinterest first.',
+      errorCode: 'AUTH_REQUIRED',
+      requiresAuth: true,
+      service: 'pinterest',
+      userId: userId
+    };
   }
   
   const browserStartTime = Date.now();

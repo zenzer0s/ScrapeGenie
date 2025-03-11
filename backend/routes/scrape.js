@@ -1,7 +1,10 @@
 const express = require("express");
 const { scrapeContent } = require("../scraper/scraperManager");
 const { fetchInstagramPost } = require("../scraper/instaScraper");
+const { scrapePinterest, loginToPinterest } = require('../scraper/pinterestScraper');
 
+// Define URL patterns for different services
+const pinterestPattern = /(?:https?:\/\/)?(?:www\.)?(?:pinterest\.com|pin\.it)\/([^\/\s]+)/i;
 const router = express.Router();
 
 router.post("/", async (req, res) => {
@@ -15,6 +18,29 @@ router.post("/", async (req, res) => {
     console.log(`🟢 Received API request for: ${url}`);
 
     try {
+        // Inside your URL handling logic
+        if (pinterestPattern.test(url)) {
+            const result = await scrapePinterest(url, userId);
+            
+            if (!result.success) {
+                // Check if this is an authentication error
+                if (result.requiresAuth && result.service === 'pinterest') {
+                    return res.status(401).json({
+                        success: false,
+                        error: result.error,
+                        errorCode: result.errorCode,
+                        requiresAuth: true,
+                        service: 'pinterest',
+                        userId: result.userId
+                    });
+                }
+                
+                // Handle other errors...
+            }
+            
+            // Process successful results...
+        }
+
         const result = await scrapeContent(url, userId); // Pass userId to scrapeContent
         console.log(`✅ Scraper Result:`, result); // Log output from scraperManager.js
         

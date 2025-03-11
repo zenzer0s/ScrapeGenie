@@ -216,6 +216,31 @@ async function handleUrlMessage(bot, msg) {
     console.error(`❌ Error handling URL: ${error.message}`);
     logger.error(`Error handling URL: ${error}`);
     
+    // Check if this is a Pinterest authentication error
+    if (error.response?.status === 401 && 
+        error.response.data?.requiresAuth && 
+        error.response.data?.service === 'pinterest') {
+      
+      console.log('🔐 Pinterest authentication required');
+      
+      await bot.sendMessage(
+        chatId,
+        "🔐 *Pinterest Login Required*\n\n" +
+        "To download content from Pinterest, you need to login first.\n\n" +
+        "Please tap the button below to log in, then send your Pinterest link again.",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔐 Login to Pinterest", callback_data: "pinterest_login" }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Original error handling for other errors
     try {
       await bot.sendMessage(chatId, `❌ Sorry, I encountered an error processing your request.\nError: ${error.message}`);
     } catch (sendError) {
