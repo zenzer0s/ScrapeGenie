@@ -9,7 +9,7 @@ env:
   DOCKER_HUB_REPO: "${{ secrets.DOCKER_USERNAME }}/scrapegenie"
   VM_NAME: "${{ secrets.VM_NAME }}"
   VM_ZONE: "${{ secrets.VM_ZONE }}"
-  VM_USERNAME: "zen"  # Hardcoded username
+  SERVER_IP: "34.47.149.250"  # Your VM's IP address
 
 jobs:
   deploy:
@@ -40,9 +40,25 @@ jobs:
       - name: Deploy to VM
         run: |
           gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command "
-            # Create application directories if they don't exist
-            mkdir -p /home/$VM_USERNAME/app/logs
-            mkdir -p /home/$VM_USERNAME/app/data
+            # Create temporary .env file
+            cat > ~/temp_env << 'ENVFILE'
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            USE_WEBHOOK=false
+            PUBLIC_URL=http://${{ env.SERVER_IP }}:8080
+            BACKEND_URL=http://${{ env.SERVER_IP }}:8080
+            PORT=8080
+            NODE_ENV=production
+            PYTHON_PATH=/usr/bin/python3
+            ENVFILE
+            
+            # Create directories with sudo if needed
+            sudo mkdir -p ~/app/logs
+            sudo mkdir -p ~/app/data
+            
+            # Move the .env file with sudo
+            sudo mv ~/temp_env ~/app/.env
+            sudo chown \$(whoami):\$(whoami) ~/app/.env
+            sudo chmod 600 ~/app/.env
             
             # Pull the latest Docker image
             sudo docker pull $DOCKER_HUB_REPO:latest
@@ -50,23 +66,12 @@ jobs:
             # Stop existing container if running
             sudo docker rm -f scrapegenie || true
             
-            # Create .env file in user's home directory
-            cat > /home/$VM_USERNAME/app/.env << EOF
-            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-            USE_WEBHOOK=false
-            PUBLIC_URL=${{ secrets.VM_PUBLIC_URL || 'http://localhost' }}
-            BACKEND_URL=${{ secrets.VM_PUBLIC_URL || 'http://localhost' }}
-            PORT=8080
-            NODE_ENV=production
-            PYTHON_PATH=/usr/bin/python3
-            EOF
-            
             # Start new container
             sudo docker run -d --name scrapegenie --restart unless-stopped \\
-              -p 80:8080 \\
-              -v /home/$VM_USERNAME/app/logs:/app/logs \\
-              -v /home/$VM_USERNAME/app/data:/app/data \\
-              --env-file /home/$VM_USERNAME/app/.env \\
+              -p 8080:8080 \\
+              -v ~/app/logs:/app/logs \\
+              -v ~/app/data:/app/data \\
+              --env-file ~/app/.env \\
               $DOCKER_HUB_REPO:latest
             
             # Clean up unused Docker resources
@@ -84,4 +89,4 @@ jobs:
 
       - name: Show Output
         run: |
-          echo "✅ Deployed to ${{ secrets.VM_PUBLIC_URL || 'your server' }}"
+          echo "✅ Deployed to http://${{ env.SERVER_IP }}:8080"
