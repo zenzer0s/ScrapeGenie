@@ -48,6 +48,8 @@ function formatUptime(uptime) {
 // /start command
 async function startCommand(bot, msg) {
   const chatId = msg.chat.id;
+  
+  // Send welcome message
   await bot.sendMessage(chatId, 
     `👋 *Welcome to ScrapeGenie!* 🧞‍♂️\n\n` +
     `I can extract information from:\n\n` +
@@ -56,31 +58,60 @@ async function startCommand(bot, msg) {
     `🔹 *Pinterest Pins* 📌\n` +
     `🔹 *Websites* 🌍\n\n` +
     `📌 Just send me a URL and I'll do the magic!\n\n` +
-    `For Pinterest pins, you may need to log in first with /pinterest_login`,
-    { parse_mode: 'Markdown' }
+    `Select an option below or just send me a link:`,
+    { 
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '📖 Help', callback_data: 'help' },
+            { text: '🔄 Status', callback_data: 'status' }
+          ],
+          [
+            { text: '🔐 Pinterest Login', callback_data: 'pinterest_login' },
+            { text: '🔓 Pinterest Logout', callback_data: 'pinterest_logout' }
+          ]
+        ]
+      }
+    }
   );
 }
 
-// /help command - without Markdown
+// /help command - with 2 columns, 3 rows layout
 async function helpCommand(bot, msg) {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId,
-    `📖 ScrapeGenie Help Guide\n\n` +
+    `📖 *ScrapeGenie Help Guide*\n\n` +
     `🔹 Send a URL to extract its details.\n\n` +
-    `💡 Supported Platforms:\n` +
+    `💡 *Supported Platforms:*\n` +
     `   • YouTube - Gets title, thumbnail, and video link.\n` +
     `   • Instagram - Extracts posts and reels with captions.\n` +
     `   • Pinterest - Downloads pins and videos (login may be required).\n` +
     `   • Websites - Fetches title, description & preview.\n\n` +
-    `🔹 Commands:\n` +
-    `/start - Start the bot\n` +
-    `/help - Show this help message\n` +
-    `/status - Check bot status\n` +
-    `/usage - View system resource usage\n` +
-    `/pinterest_login - Log in to your Pinterest account\n` +
-    `/pinterest_logout - Log out of Pinterest\n` +
-    `/pinterest_status - Check Pinterest login status`
-    // No parse_mode parameter here
+    `Select an option below:`,
+    { 
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          // Row 1: Home + Status 
+          [
+            { text: '🏠 Home', callback_data: 'start' },
+            { text: '🔄 Status', callback_data: 'status' }
+          ],
+          // Row 2: Usage + Pinterest Login
+          [
+            { text: '📊 Usage', callback_data: 'usage' },
+            { text: '🔍 Pinterest Status', callback_data: 'pinterest_status' }
+            
+          ],
+          // Row 3: Pinterest Logout + Pinterest Status
+          [
+            { text: '🔐 Pinterest Login', callback_data: 'pinterest_login' },
+            { text: '🔓 Pinterest Logout', callback_data: 'pinterest_logout' }
+          ]
+        ]
+      }
+    }
   );
 }
 
@@ -158,11 +189,11 @@ async function pinterestLoginCommand(bot, msg) {
     });
 
     if (statusResponse.data.success && statusResponse.data.isLoggedIn) {
-      await bot.sendMessage(chatId, 
-        '✅ *You are already logged in to Pinterest!*\n\n' +
+      await bot.sendMessage(chatId,
+        '✅ You are already logged in to Pinterest!\n\n' +
         'You can now send Pinterest links and I\'ll download them using your account.\n\n' +
-        'To log out, use /pinterest_logout',
-        { parse_mode: 'Markdown' }
+        'To log out, use /pinterest_logout'
+        // No parse_mode parameter
       );
       return;
     }
@@ -192,7 +223,16 @@ async function pinterestLoginCommand(bot, msg) {
     );
     
     // Send the login URL separately (Telegram will make it clickable automatically)
-    await bot.sendMessage(chatId, loginUrl);
+    await bot.sendMessage(chatId, loginUrl, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '🔍 Check Login Status', callback_data: 'pinterest_status' },
+            { text: '🏠 Home', callback_data: 'start' }
+          ]
+        ]
+      }
+    });
     
   } catch (error) {
     console.error('Pinterest login error:', error);
@@ -239,7 +279,17 @@ async function pinterestLogoutCommand(bot, msg) {
 
     if (response.data.success) {
       await bot.sendMessage(chatId,
-        "✅ You have been logged out of Pinterest."
+        "✅ You have been logged out of Pinterest.",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '🔐 Login Again', callback_data: 'pinterest_login' },
+                { text: '🏠 Home', callback_data: 'start' }
+              ]
+            ]
+          }
+        }
       );
     } else {
       throw new Error(response.data.error || 'Failed to logout');
@@ -264,7 +314,13 @@ async function pinterestStatusCommand(bot, msg) {
     } catch (err) {
       await bot.sendMessage(chatId,
         "❌ Backend server not available.\n\nPlease ensure the backend server is running.",
-        // No parse_mode to avoid issues
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🏠 Back to Home', callback_data: 'start' }]
+            ]
+          }
+        }
       );
       return;
     }
@@ -278,11 +334,30 @@ async function pinterestStatusCommand(bot, msg) {
       if (response.data.isLoggedIn) {
         await bot.sendMessage(chatId,
           "✅ You are logged in to Pinterest.",
-          // No parse_mode to avoid issues
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔓 Logout', callback_data: 'pinterest_logout' },
+                  { text: '🏠 Home', callback_data: 'start' }
+                ]
+              ]
+            }
+          }
         );
       } else {
         await bot.sendMessage(chatId,
-          "⚠️ You are not logged in to Pinterest\n\nTo log in, use /pinterest_login"
+          "⚠️ You are not logged in to Pinterest",
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '🔐 Login', callback_data: 'pinterest_login' },
+                  { text: '🏠 Home', callback_data: 'start' }
+                ]
+              ]
+            }
+          }
         );
       }
     } else {
@@ -291,7 +366,14 @@ async function pinterestStatusCommand(bot, msg) {
   } catch (error) {
     console.error('Pinterest status error:', error);
     await bot.sendMessage(chatId,
-      "❌ Error checking login status\n\nSorry, something went wrong. Please try again later."
+      "❌ Error checking login status\n\nSorry, something went wrong. Please try again later.",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🏠 Back to Home', callback_data: 'start' }]
+          ]
+        }
+      }
     );
   }
 }
