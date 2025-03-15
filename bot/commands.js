@@ -75,7 +75,7 @@ async function startCommand(bot, msg) {
       }
     }
   );
-  return sentMessage;
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /help command - with 2 columns, 3 rows layout
@@ -114,7 +114,7 @@ async function helpCommand(bot, msg) {
       }
     }
   );
-  return sentMessage;
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /status command
@@ -130,7 +130,7 @@ async function statusCommand(bot, msg, checkBackendStatus) {
     `${status ? '✅' : '❌'} *Backend:* ${status ? 'Connected' : 'Not Connected'}`,
     { parse_mode: 'Markdown' }
   );
-  return sentMessage;
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /usage command
@@ -162,7 +162,7 @@ async function usageCommand(bot, msg) {
     `*Uptime:* ${uptimeStr}`;
 
   const sentMessage = await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-  return sentMessage;
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // Fix for the pinterestLoginCommand function:
@@ -184,7 +184,7 @@ async function pinterestLoginCommand(bot, msg) {
         'The Pinterest login service is currently unavailable. Please try again later.',
         { parse_mode: 'Markdown' }
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     }
     
     // Check if user is already logged in
@@ -199,7 +199,7 @@ async function pinterestLoginCommand(bot, msg) {
         'To log out, use /pinterest_logout'
         // No parse_mode parameter
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Generate login token
@@ -238,7 +238,7 @@ async function pinterestLoginCommand(bot, msg) {
       }
     });
     
-    return [instructionsMessage, loginUrlMessage];
+    return { sentMessages: [instructionsMessage, loginUrlMessage], userMessageId: msg.message_id };
     
   } catch (error) {
     console.error('Pinterest login error:', error);
@@ -251,7 +251,7 @@ async function pinterestLoginCommand(bot, msg) {
         'Please try again later.',
         { parse_mode: 'Markdown' }
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     } else {
       const sentMessage = await bot.sendMessage(chatId,
         '❌ *Login Error*\n\n' +
@@ -259,7 +259,7 @@ async function pinterestLoginCommand(bot, msg) {
         'Please try again later.',
         { parse_mode: 'Markdown' }
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     }
   }
 }
@@ -277,7 +277,7 @@ async function pinterestLogoutCommand(bot, msg) {
       const sentMessage = await bot.sendMessage(chatId,
         "❌ Backend server not available.\n\nPlease ensure the backend server is running."
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Try to logout
@@ -299,7 +299,7 @@ async function pinterestLogoutCommand(bot, msg) {
           }
         }
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     } else {
       throw new Error(response.data.error || 'Failed to logout');
     }
@@ -308,7 +308,7 @@ async function pinterestLogoutCommand(bot, msg) {
     const sentMessage = await bot.sendMessage(chatId,
       "❌ Error logging out\n\nSorry, something went wrong. Please try again later."
     );
-    return sentMessage;
+    return { sentMessage, userMessageId: msg.message_id };
   }
 }
 
@@ -332,7 +332,7 @@ async function pinterestStatusCommand(bot, msg) {
           }
         }
       );
-      return sentMessage;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Check login status
@@ -355,7 +355,7 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
-        return sentMessage;
+        return { sentMessage, userMessageId: msg.message_id };
       } else {
         const sentMessage = await bot.sendMessage(chatId,
           "⚠️ You are not logged in to Pinterest",
@@ -370,7 +370,7 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
-        return sentMessage;
+        return { sentMessage, userMessageId: msg.message_id };
       }
     } else {
       throw new Error(response.data.error || 'Failed to check login status');
@@ -387,7 +387,7 @@ async function pinterestStatusCommand(bot, msg) {
         }
       }
     );
-    return sentMessage;
+    return { sentMessage, userMessageId: msg.message_id };
   }
 }
 
