@@ -34,9 +34,8 @@ if (!process.env.BACKEND_URL) {
   console.log(`• BACKEND_URL (default): ${process.env.BACKEND_URL}`);
 }
 
-// Import libraries for both bot frameworks
+// Import libraries for the bot framework
 const TelegramBot = require('node-telegram-bot-api');
-const { Telegraf } = require("telegraf");
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const express = require('express');
@@ -49,7 +48,7 @@ const {
   pinterestLogoutCommand,
   pinterestStatusCommand
 } = require('./commands');
-const { handleUrlMessage, handleMessage } = require('./messageHandler');
+const { handleUrlMessage } = require('./messageHandler');
 const logger = require('./logger');
 
 // Set up Axios to retry failed requests
@@ -83,191 +82,114 @@ app.get('/health', (req, res) => {
   res.status(200).send({ status: 'ok', timestamp: new Date() });
 });
 
-// Check if we should use the Telegraf implementation or the traditional one
-const USE_TELEGRAF = process.env.USE_TELEGRAF === 'true';
-
 let bot;
-let telegrafBot;
 
-if (USE_TELEGRAF) {
-  // ===== TELEGRAF IMPLEMENTATION =====
-  console.log("🔄 Using Telegraf implementation");
-  
-  if (USE_WEBHOOK) {
-    telegrafBot = new Telegraf(token);
+// ===== NODE-TELEGRAM-BOT-API IMPLEMENTATION =====
+console.log("🔄 Using node-telegram-bot-api implementation");
+
+if (USE_WEBHOOK) {
+  // Webhook configuration
+  if (PUBLIC_URL) {
+    const webhookPath = `/bot${token}`;
+    const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
     
-    // Set up webhook
-    if (PUBLIC_URL) {
-      const webhookPath = `/telegraf-webhook/${token}`;
-      const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
-      
-      // Setup webhook endpoint
-      app.use(telegrafBot.webhookCallback(webhookPath));
-      
-      // Start the Express server
+    bot = new TelegramBot(token, { webHook: { port: PORT } });
+    
+    // Set the webhook
+    bot.setWebHook(webhookUrl)
+      .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
+      .catch(err => {
+        console.error(`❌ Failed to set webhook: ${err}`);
+        logger.error(`Failed to set webhook: ${err}`);
+      });
+    
+    // Endpoint for webhook
+    app.post(webhookPath, (req, res) => {
+      bot.processUpdate(req.body);
+      res.sendStatus(200);
+    });
+    
+    // If not started via setWebHook, start the Express server
+    if (!app.listening) {
       app.listen(PORT, () => {
         console.log(`🚀 Webhook server running on port ${PORT}`);
-        // Set webhook in Telegram
-        telegrafBot.telegram.setWebhook(webhookUrl)
-          .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
-          .catch(err => {
-            console.error(`❌ Failed to set webhook: ${err}`);
-            logger.error(`Failed to set webhook: ${err}`);
-          });
       });
-    } else {
-      console.error("❌ Public URL not provided for webhook mode");
-      logger.error("Public URL not provided for webhook mode");
-      process.exit(1);
     }
+    
+    console.log("🤖 Bot is running in webhook mode...");
   } else {
-    // Polling mode
-    telegrafBot = new Telegraf(token);
-    telegrafBot.launch()
-      .then(() => console.log("🤖 Telegraf bot is running in polling mode..."))
-      .catch(err => {
-        console.error(`❌ Failed to start bot: ${err}`);
-        logger.error(`Failed to start bot: ${err}`);
-      });
+    console.error("❌ Public URL not provided for webhook mode");
+    logger.error("Public URL not provided for webhook mode");
+    process.exit(1);
   }
-  
-  // Handle basic commands
-  telegrafBot.start((ctx) => ctx.reply("Welcome! Send me a URL to download content"));
-  telegrafBot.help((ctx) => ctx.reply("Just send me a URL, and I'll download the content for you"));
-  telegrafBot.command('status', async (ctx) => {
-    const isBackendRunning = await checkBackendStatus();
-    const statusMessage = isBackendRunning 
-      ? "✅ Backend service is running." 
-      : "❌ Backend service is not responding.";
-    ctx.reply(statusMessage);
-  });
-  
-  // Handle text messages (URLs)
-  telegrafBot.on("text", async (ctx) => {
-    const messageText = ctx.message.text;
-    if (messageText.startsWith("http")) {
-      await handleMessage(ctx);
-    }
-  });
-  
-  // Error handling
-  telegrafBot.catch((err, ctx) => {
-    logger.error(`Telegraf error for ${ctx.updateType}`, err);
-    console.error(`Telegraf error for ${ctx.updateType}:`, err);
-  });
-  
-  // Enable graceful stop
-  process.once('SIGINT', () => telegrafBot.stop('SIGINT'));
-  process.once('SIGTERM', () => telegrafBot.stop('SIGTERM'));
-  
 } else {
-  // ===== NODE-TELEGRAM-BOT-API IMPLEMENTATION =====
-  console.log("🔄 Using node-telegram-bot-api implementation");
-  
-  if (USE_WEBHOOK) {
-    // Webhook configuration
-    if (PUBLIC_URL) {
-      const webhookPath = `/bot${token}`;
-      const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
-      
-      bot = new TelegramBot(token, { webHook: { port: PORT } });
-      
-      // Set the webhook
-      bot.setWebHook(webhookUrl)
-        .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
-        .catch(err => {
-          console.error(`❌ Failed to set webhook: ${err}`);
-          logger.error(`Failed to set webhook: ${err}`);
-        });
-      
-      // Endpoint for webhook
-      app.post(webhookPath, (req, res) => {
-        bot.processUpdate(req.body);
-        res.sendStatus(200);
-      });
-      
-      // If not started via setWebHook, start the Express server
-      if (!app.listening) {
-        app.listen(PORT, () => {
-          console.log(`🚀 Webhook server running on port ${PORT}`);
-        });
-      }
-      
-      console.log("🤖 Bot is running in webhook mode...");
-    } else {
-      console.error("❌ Public URL not provided for webhook mode");
-      logger.error("Public URL not provided for webhook mode");
-      process.exit(1);
-    }
-  } else {
-    // Polling mode
-    bot = new TelegramBot(token, { polling: true });
-    console.log("🚀 Bot is running in polling mode...");
-  }
-  
-  // Register command handlers
-  bot.onText(/\/start/, (msg) => startCommand(bot, msg));
-  bot.onText(/\/help/, (msg) => helpCommand(bot, msg));
-  bot.onText(/\/status/, (msg) => statusCommand(bot, msg, checkBackendStatus));
-  bot.onText(/\/usage/, (msg) => usageCommand(bot, msg));
-  
-  // Register Pinterest command handlers
-  bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
-  bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
-  bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
-  
-  // Handle Pinterest login with token
-  bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
-    const token = match[1];
-    const chatId = msg.chat.id;
-    const userId = msg.from.id.toString();
-    
-    // Verify token and redirect to login page
-    // ...
-  });
-  
-  // Delegate URL message processing to messageHandler.js
-  bot.on('message', async (msg) => {
-    await handleUrlMessage(bot, msg);
-  });
-
-  // Setup callback query handler
-  bot.on('callback_query', async (callbackQuery) => {
-    const action = callbackQuery.data;
-    const msg = callbackQuery.message;
-    const chatId = msg.chat.id;
-    
-    // Acknowledge the callback
-    await bot.answerCallbackQuery(callbackQuery.id);
-    
-    // Process the action
-    switch (action) {
-      case 'start':
-        await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      case 'help':
-        await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      case 'status':
-        await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
-        break;
-      case 'usage':
-        await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      case 'pinterest_login':
-        await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      case 'pinterest_logout':
-        await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      case 'pinterest_status':
-        await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-        break;
-      default:
-        await bot.sendMessage(chatId, "Unknown command");
-    }
-  });
+  // Polling mode
+  bot = new TelegramBot(token, { polling: true });
+  console.log("🚀 Bot is running in polling mode...");
 }
+
+// Register command handlers
+bot.onText(/\/start/, (msg) => startCommand(bot, msg));
+bot.onText(/\/help/, (msg) => helpCommand(bot, msg));
+bot.onText(/\/status/, (msg) => statusCommand(bot, msg, checkBackendStatus));
+bot.onText(/\/usage/, (msg) => usageCommand(bot, msg));
+
+// Register Pinterest command handlers
+bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
+bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
+bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
+
+// Handle Pinterest login with token
+bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
+  const token = match[1];
+  const chatId = msg.chat.id;
+  const userId = msg.from.id.toString();
+  
+  // Verify token and redirect to login page
+  // ...
+});
+
+// Delegate URL message processing to messageHandler.js
+bot.on('message', async (msg) => {
+  await handleUrlMessage(bot, msg);
+});
+
+// Setup callback query handler
+bot.on('callback_query', async (callbackQuery) => {
+  const action = callbackQuery.data;
+  const msg = callbackQuery.message;
+  const chatId = msg.chat.id;
+  
+  // Acknowledge the callback
+  await bot.answerCallbackQuery(callbackQuery.id);
+  
+  // Process the action
+  switch (action) {
+    case 'start':
+      await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    case 'help':
+      await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    case 'status':
+      await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
+      break;
+    case 'usage':
+      await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    case 'pinterest_login':
+      await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    case 'pinterest_logout':
+      await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    case 'pinterest_status':
+      await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      break;
+    default:
+      await bot.sendMessage(chatId, "Unknown command");
+  }
+});
 
 // Check backend status function
 async function checkBackendStatus() {
