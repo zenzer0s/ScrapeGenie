@@ -128,16 +128,54 @@ if (USE_WEBHOOK) {
   console.log("🚀 Bot is running in polling mode...");
 }
 
+// Function to delete messages after a delay
+async function deleteMessageAfterDelay(bot, chatId, messageId, delay) {
+  setTimeout(async () => {
+    try {
+      await bot.deleteMessage(chatId, messageId);
+      console.log(`🗑️ Deleted message ${messageId} from chat ${chatId}`);
+    } catch (error) {
+      console.error(`❌ Failed to delete message ${messageId} from chat ${chatId}:`, error.message);
+    }
+  }, delay);
+}
+
 // Register command handlers
-bot.onText(/\/start/, (msg) => startCommand(bot, msg));
-bot.onText(/\/help/, (msg) => helpCommand(bot, msg));
-bot.onText(/\/status/, (msg) => statusCommand(bot, msg, checkBackendStatus));
-bot.onText(/\/usage/, (msg) => usageCommand(bot, msg));
+bot.onText(/\/start/, async (msg) => {
+  const sentMessage = await startCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
+
+bot.onText(/\/help/, async (msg) => {
+  const sentMessage = await helpCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
+
+bot.onText(/\/status/, async (msg) => {
+  const sentMessage = await statusCommand(bot, msg, checkBackendStatus);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
+
+bot.onText(/\/usage/, async (msg) => {
+  const sentMessage = await usageCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
 
 // Register Pinterest command handlers
-bot.onText(/\/pinterest_login/, (msg) => pinterestLoginCommand(bot, msg));
-bot.onText(/\/pinterest_logout/, (msg) => pinterestLogoutCommand(bot, msg));
-bot.onText(/\/pinterest_status/, (msg) => pinterestStatusCommand(bot, msg));
+bot.onText(/\/pinterest_login/, async (msg) => {
+  const sentMessage = await pinterestLoginCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
+
+bot.onText(/\/pinterest_logout/, async (msg) => {
+  const sentMessage = await pinterestLogoutCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
+
+bot.onText(/\/pinterest_status/, async (msg) => {
+  const sentMessage = await pinterestStatusCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+});
 
 // Handle Pinterest login with token
 bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
@@ -166,28 +204,36 @@ bot.on('callback_query', async (callbackQuery) => {
   // Process the action
   switch (action) {
     case 'start':
-      await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const startMessage = await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, startMessage.message_id, 15000);
       break;
     case 'help':
-      await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const helpMessage = await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, helpMessage.message_id, 15000);
       break;
     case 'status':
-      await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
+      const statusMessage = await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
+      deleteMessageAfterDelay(bot, chatId, statusMessage.message_id, 15000);
       break;
     case 'usage':
-      await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const usageMessage = await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, usageMessage.message_id, 15000);
       break;
     case 'pinterest_login':
-      await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const pinterestLoginMessage = await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, pinterestLoginMessage.message_id, 15000);
       break;
     case 'pinterest_logout':
-      await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const pinterestLogoutMessage = await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, pinterestLogoutMessage.message_id, 15000);
       break;
     case 'pinterest_status':
-      await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      const pinterestStatusMessage = await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
+      deleteMessageAfterDelay(bot, chatId, pinterestStatusMessage.message_id, 15000);
       break;
     default:
-      await bot.sendMessage(chatId, "Unknown command");
+      const unknownCommandMessage = await bot.sendMessage(chatId, "Unknown command");
+      deleteMessageAfterDelay(bot, chatId, unknownCommandMessage.message_id, 15000);
   }
 });
 
