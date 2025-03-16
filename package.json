@@ -1,11 +1,15 @@
 {
   "dependencies": {
+    "@bull-board/api": "^6.7.10",
+    "@bull-board/express": "^6.7.10",
     "axios": "^1.8.1",
     "axios-retry": "^4.5.0",
+    "bull": "^4.16.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "fs": "^0.0.1-security",
+    "ioredis": "^5.6.0",
     "node-telegram-bot-api": "^0.66.0",
     "os": "^0.1.2",
     "path": "^0.12.7",
