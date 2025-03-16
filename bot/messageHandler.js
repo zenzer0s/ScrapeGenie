@@ -183,7 +183,20 @@ async function handleUrlMessage(bot, msg) {
     };
 
     // Handle different content types
-    if (data.type === 'youtube') {
+    if (isYoutubeUrl && data.filepath) {
+      const caption = `*${escapeMarkdown(data.title || '')}*`;
+      
+      if (!fs.existsSync(data.filepath)) {
+        throw new Error(`Video file not found at: ${data.filepath}`);
+      }
+      
+      console.log('📹 Sending YouTube video...');
+      await bot.sendVideo(chatId, data.filepath, {
+        caption: caption,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+    } else if (data.type === 'youtube') {
       const caption = `*${escapeMarkdown(data.title)}*`;
       
       if (data.mediaUrl) {
