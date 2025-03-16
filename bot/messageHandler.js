@@ -55,7 +55,7 @@ async function handleUrlMessage(bot, msg) {
         
         const data = response.data.data;
         const mediaPath = data.mediaPath;
-        const caption = data.caption || '';
+        let caption = data.caption || '';
         const isVideo = data.is_video || false;
         const isCarousel = data.is_carousel || false;
         
@@ -69,40 +69,48 @@ async function handleUrlMessage(bot, msg) {
           ]
         };
         
-        // Format caption
-        const messageText = caption ? `${caption}` : '';
-        
         // Handle carousel posts (multiple images)
         if (isCarousel && Array.isArray(mediaPath) && mediaPath.length > 0) {
           console.log(`🖼️ Sending carousel with ${mediaPath.length} images...`);
           
-          // Prepare media group format for Telegram
-          const mediaGroup = mediaPath.map((filePath, index) => {
-            if (!fs.existsSync(filePath)) {
-              console.warn(`⚠️ File not found: ${filePath}`);
-              return null;
-            }
-            
-            // Only first image gets the caption
-            return {
-              type: 'photo',
-              media: fs.createReadStream(filePath),
-              caption: index === 0 ? messageText : '',
-              parse_mode: 'HTML'
-            };
-          }).filter(Boolean); // Remove any nulls from non-existent files
-          
-          if (mediaGroup.length === 0) {
-            throw new Error('No valid files found in carousel');
+          // Split mediaPath into chunks of 6 images each
+          const mediaChunks = [];
+          for (let i = 0; i < mediaPath.length; i += 6) {
+            mediaChunks.push(mediaPath.slice(i, i + 6));
           }
           
-          // Send as media group
-          await bot.sendMediaGroup(chatId, mediaGroup);
+          for (const chunk of mediaChunks) {
+            // Prepare media group format for Telegram
+            const mediaGroup = chunk.map((filePath) => {
+              if (!fs.existsSync(filePath)) {
+                console.warn(`⚠️ File not found: ${filePath}`);
+                return null;
+              }
+              
+              return {
+                type: 'photo',
+                media: fs.createReadStream(filePath),
+                parse_mode: 'HTML'
+              };
+            }).filter(Boolean); // Remove any nulls from non-existent files
+            
+            if (mediaGroup.length === 0) {
+              throw new Error('No valid files found in carousel');
+            }
+            
+            // Send as media group
+            await bot.sendMediaGroup(chatId, mediaGroup);
+          }
           
-          // Send button separately since media groups don't support inline keyboards
-          await bot.sendMessage(chatId, '📱 View original post:', {
-            reply_markup: keyboard
-          });
+          // Send caption separately if there are more than 6 images
+          if (mediaPath.length > 6) {
+            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML', reply_markup: keyboard });
+          } else {
+            // Send button separately since media groups don't support inline keyboards
+            await bot.sendMessage(chatId, '📱 View original post:', {
+              reply_markup: keyboard
+            });
+          }
           
         } else if (isVideo) {
           // Single video
@@ -112,9 +120,14 @@ async function handleUrlMessage(bot, msg) {
           
           console.log('📹 Sending video...');
           await bot.sendVideo(chatId, mediaPath, {
-            caption: messageText,
+            caption: caption.length <= 1024 ? caption : '',
             reply_markup: keyboard
           });
+          
+          // Send caption separately if it's too long
+          if (caption.length > 1024) {
+            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+          }
           
         } else {
           // Single image
@@ -124,9 +137,14 @@ async function handleUrlMessage(bot, msg) {
           
           console.log('🖼️ Sending single image...');
           await bot.sendPhoto(chatId, mediaPath, {
-            caption: messageText,
+            caption: caption.length <= 1024 ? caption : '',
             reply_markup: keyboard
           });
+          
+          // Send caption separately if it's too long
+          if (caption.length > 1024) {
+            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+          }
         }
         
         console.log('✅ Instagram content sent successfully');
@@ -165,7 +183,20 @@ async function handleUrlMessage(bot, msg) {
     };
 
     // Handle different content types
-    if (data.type === 'youtube') {
+    if (isYoutubeUrl && data.filepath) {
+      const caption = `*${escapeMarkdown(data.title || '')}*`;
+      
+      if (!fs.existsSync(data.filepath)) {
+        throw new Error(`Video file not found at: ${data.filepath}`);
+      }
+      
+      console.log('📹 Sending YouTube video...');
+      await bot.sendVideo(chatId, data.filepath, {
+        caption: caption,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+    } else if (data.type === 'youtube') {
       const caption = `*${escapeMarkdown(data.title)}*`;
       
       if (data.mediaUrl) {

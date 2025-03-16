@@ -50,7 +50,7 @@ async function startCommand(bot, msg) {
   const chatId = msg.chat.id;
   
   // Send welcome message
-  await bot.sendMessage(chatId, 
+  const sentMessage = await bot.sendMessage(chatId, 
     `👋 *Welcome to ScrapeGenie!* 🧞‍♂️\n\n` +
     `I can extract information from:\n\n` +
     `🔹 *YouTube Videos* 📺\n` +
@@ -75,12 +75,13 @@ async function startCommand(bot, msg) {
       }
     }
   );
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /help command - with 2 columns, 3 rows layout
 async function helpCommand(bot, msg) {
   const chatId = msg.chat.id;
-  await bot.sendMessage(chatId,
+  const sentMessage = await bot.sendMessage(chatId,
     `📖 *ScrapeGenie Help Guide*\n\n` +
     `🔹 Send a URL to extract its details.\n\n` +
     `💡 *Supported Platforms:*\n` +
@@ -113,6 +114,7 @@ async function helpCommand(bot, msg) {
       }
     }
   );
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /status command
@@ -121,13 +123,14 @@ async function statusCommand(bot, msg, checkBackendStatus) {
   const status = await checkBackendStatus();
   const uptimeStr = formatUptime(process.uptime());
 
-  await bot.sendMessage(chatId,
+  const sentMessage = await bot.sendMessage(chatId,
     `🟢 *Bot Status*\n\n` +
     `✅ *Bot:* Online\n` +
     `⏱ *Uptime:* ${uptimeStr}\n` +
     `${status ? '✅' : '❌'} *Backend:* ${status ? 'Connected' : 'Not Connected'}`,
     { parse_mode: 'Markdown' }
   );
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // /usage command
@@ -158,7 +161,8 @@ async function usageCommand(bot, msg) {
     `• System: ${systemCPU} ms\n\n` +
     `*Uptime:* ${uptimeStr}`;
 
-  await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  const sentMessage = await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+  return { sentMessage, userMessageId: msg.message_id };
 }
 
 // Fix for the pinterestLoginCommand function:
@@ -175,12 +179,12 @@ async function pinterestLoginCommand(bot, msg) {
       }
     } catch (err) {
       console.error('Backend health check failed:', err);
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         '❌ *Backend server not available*\n\n' +
         'The Pinterest login service is currently unavailable. Please try again later.',
         { parse_mode: 'Markdown' }
       );
-      return;
+      return { sentMessage, userMessageId: msg.message_id };
     }
     
     // Check if user is already logged in
@@ -189,13 +193,13 @@ async function pinterestLoginCommand(bot, msg) {
     });
 
     if (statusResponse.data.success && statusResponse.data.isLoggedIn) {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         '✅ You are already logged in to Pinterest!\n\n' +
         'You can now send Pinterest links and I\'ll download them using your account.\n\n' +
         'To log out, use /pinterest_logout'
         // No parse_mode parameter
       );
-      return;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Generate login token
@@ -210,7 +214,7 @@ async function pinterestLoginCommand(bot, msg) {
     const loginUrl = tokenResponse.data.loginUrl;
 
     // Send detailed instructions
-    await bot.sendMessage(chatId,
+    const instructionsMessage = await bot.sendMessage(chatId,
       '🔐 *Pinterest Authentication*\n\n' +
       'To download high-quality Pinterest content and access private pins, you need to authenticate.\n\n' +
       '*Instructions:*\n' +
@@ -223,7 +227,7 @@ async function pinterestLoginCommand(bot, msg) {
     );
     
     // Send the login URL separately (Telegram will make it clickable automatically)
-    await bot.sendMessage(chatId, loginUrl, {
+    const loginUrlMessage = await bot.sendMessage(chatId, loginUrl, {
       reply_markup: {
         inline_keyboard: [
           [
@@ -234,24 +238,28 @@ async function pinterestLoginCommand(bot, msg) {
       }
     });
     
+    return { sentMessages: [instructionsMessage, loginUrlMessage], userMessageId: msg.message_id };
+    
   } catch (error) {
     console.error('Pinterest login error:', error);
     
     // Provide more detailed error messages
     if (error.code === 'ECONNREFUSED' || error.message.includes('connect')) {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         '❌ *Connection Error*\n\n' +
         'Cannot connect to the authentication server. The server might be down or unavailable.\n\n' +
         'Please try again later.',
         { parse_mode: 'Markdown' }
       );
+      return { sentMessage, userMessageId: msg.message_id };
     } else {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         '❌ *Login Error*\n\n' +
         'Sorry, we encountered a problem setting up Pinterest authentication.\n\n' +
         'Please try again later.',
         { parse_mode: 'Markdown' }
       );
+      return { sentMessage, userMessageId: msg.message_id };
     }
   }
 }
@@ -266,10 +274,10 @@ async function pinterestLogoutCommand(bot, msg) {
     try {
       await axiosInstance.get(`/health`);
     } catch (err) {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         "❌ Backend server not available.\n\nPlease ensure the backend server is running."
       );
-      return;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Try to logout
@@ -278,7 +286,7 @@ async function pinterestLogoutCommand(bot, msg) {
     });
 
     if (response.data.success) {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         "✅ You have been logged out of Pinterest.",
         {
           reply_markup: {
@@ -291,14 +299,16 @@ async function pinterestLogoutCommand(bot, msg) {
           }
         }
       );
+      return { sentMessage, userMessageId: msg.message_id };
     } else {
       throw new Error(response.data.error || 'Failed to logout');
     }
   } catch (error) {
     console.error('Pinterest logout error:', error);
-    await bot.sendMessage(chatId,
+    const sentMessage = await bot.sendMessage(chatId,
       "❌ Error logging out\n\nSorry, something went wrong. Please try again later."
     );
+    return { sentMessage, userMessageId: msg.message_id };
   }
 }
 
@@ -312,7 +322,7 @@ async function pinterestStatusCommand(bot, msg) {
     try {
       await axiosInstance.get(`/health`);
     } catch (err) {
-      await bot.sendMessage(chatId,
+      const sentMessage = await bot.sendMessage(chatId,
         "❌ Backend server not available.\n\nPlease ensure the backend server is running.",
         {
           reply_markup: {
@@ -322,7 +332,7 @@ async function pinterestStatusCommand(bot, msg) {
           }
         }
       );
-      return;
+      return { sentMessage, userMessageId: msg.message_id };
     }
 
     // Check login status
@@ -332,7 +342,7 @@ async function pinterestStatusCommand(bot, msg) {
 
     if (response.data.success) {
       if (response.data.isLoggedIn) {
-        await bot.sendMessage(chatId,
+        const sentMessage = await bot.sendMessage(chatId,
           "✅ You are logged in to Pinterest.",
           {
             reply_markup: {
@@ -345,8 +355,9 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
+        return { sentMessage, userMessageId: msg.message_id };
       } else {
-        await bot.sendMessage(chatId,
+        const sentMessage = await bot.sendMessage(chatId,
           "⚠️ You are not logged in to Pinterest",
           {
             reply_markup: {
@@ -359,13 +370,14 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
+        return { sentMessage, userMessageId: msg.message_id };
       }
     } else {
       throw new Error(response.data.error || 'Failed to check login status');
     }
   } catch (error) {
     console.error('Pinterest status error:', error);
-    await bot.sendMessage(chatId,
+    const sentMessage = await bot.sendMessage(chatId,
       "❌ Error checking login status\n\nSorry, something went wrong. Please try again later.",
       {
         reply_markup: {
@@ -375,6 +387,7 @@ async function pinterestStatusCommand(bot, msg) {
         }
       }
     );
+    return { sentMessage, userMessageId: msg.message_id };
   }
 }
 

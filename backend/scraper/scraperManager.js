@@ -1,6 +1,7 @@
 const { fetchInstagramPost } = require("./instaScraper");
 const { scrapePinterest } = require("./pinterestScraper");
 const { scrapeYouTube } = require("./ytScraper");
+const { fetchYouTubeShort } = require("./ytShort");
 const scraper = require("./scraper");
 const axios = require("axios");
 
@@ -10,6 +11,7 @@ const PATTERNS = {
     pinterest: /https?:\/\/(www\.)?pinterest\.[a-z]+\/pin\//,
     pinterestShort: /https?:\/\/(www\.)?pin\.it\//, // Short links
     youtube: /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/, // Fixed regex
+    youtubeShorts: /https?:\/\/(www\.)?youtube\.com\/shorts\//, // New pattern for YouTube Shorts
 };
 
 // Function to expand Pinterest short links
@@ -25,7 +27,7 @@ async function expandPinterestUrl(url) {
     }
 }
 
-async function scrapeContent(url, userId = 'default') {
+async function scrapeContent(url) {
     try {
         console.log(`🔍 Received URL: ${url}`);
 
@@ -38,8 +40,11 @@ async function scrapeContent(url, userId = 'default') {
             console.log("📸 Instagram detected! ✅ Calling fetchInstagramPost...");
             return await fetchInstagramPost(url); // 🚀 Only use Instaloader, not Puppeteer!
         } else if (PATTERNS.pinterest.test(url)) {
-            console.log(`📌 Pinterest detected! Calling scrapePinterest...`);
-            return await scrapePinterest(url, userId); // Pass userId here
+            console.log("📌 Pinterest detected! Calling scrapePinterest...");
+            return await scrapePinterest(url);
+        } else if (PATTERNS.youtubeShorts.test(url)) {
+            console.log("🎥 YouTube Shorts detected! ✅ Calling fetchYouTubeShort...");
+            return await fetchYouTubeShort(url);
         } else if (PATTERNS.youtube.test(url)) {
             console.log("🎥 YouTube detected! Calling scrapeYouTube...");
             return await scrapeYouTube(url);
