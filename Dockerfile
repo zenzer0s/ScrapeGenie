@@ -24,12 +24,13 @@ RUN apt-get update && apt-get install -y \
     apt-get clean
 
 # Install FFmpeg (latest version with all codecs)
-RUN add-apt-repository ppa:savoury1/ffmpeg4 -y && \
-    apt update && apt install -y ffmpeg && \
+RUN apt-get update && apt-get install -y software-properties-common && \
+    add-apt-repository ppa:savoury1/ffmpeg4 -y && \
+    apt-get update && apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Install GStreamer and all necessary plugins
-RUN apt update && apt install -y \
+RUN apt-get update && apt-get install -y \
     gstreamer1.0-tools gstreamer1.0-libav \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
