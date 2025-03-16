@@ -13,7 +13,7 @@ log_file = os.path.join(output_dir, "yt-dlp-log.txt")
 with open(log_file, "w") as log:
     try:
         result = subprocess.run([
-            "yt-dlp", "-f", "best", "--output", output_template, "--print-json", url
+            "yt-dlp", "-f", "bv*+ba/b", "--merge-output-format", "mp4", "--output", output_template, "--print-json", url
         ], stdout=log, stderr=log, text=True, check=True)
 
         metadata = json.loads(result.stdout)
