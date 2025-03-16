@@ -1,9 +1,11 @@
 // ytScraper.js
 const puppeteer = require('puppeteer');
 const getBrowser = require('./browserManager');
-const { exec } = require("child_process");
+const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+
+const pythonPath = process.env.PYTHON_PATH || "/usr/bin/python3";
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
@@ -141,18 +143,24 @@ async function fetchYouTubeShort(url) {
 
         console.log(`📂 RAM disk directory: ${downloadDir}`);
 
-        const command = `python3 "${scriptPath}" "${url}" "${downloadDir}"`;
-        exec(command, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`❌ yt-dlp Error: ${stderr}`);
-                return reject(new Error(stderr));
-            }
+        const process = spawn(pythonPath, [scriptPath, url, downloadDir]);
 
-            console.log("Raw Python output:", stdout);
+        process.stdout.on("data", (data) => {
+            console.log("📥 yt-dlp progress:", data.toString());
+        });
+
+        process.stderr.on("data", (data) => {
+            console.error("❌ yt-dlp error:", data.toString());
+        });
+
+        process.on("close", (code) => {
+            if (code !== 0) {
+                return reject(new Error(`yt-dlp process exited with code ${code}`));
+            }
 
             let output;
             try {
-                output = JSON.parse(stdout.split("\n").pop());
+                output = JSON.parse(data.toString().split("\n").pop());
                 if (output.error) return reject(new Error(output.error));
             } catch (parseError) {
                 return reject(new Error("Failed to parse yt-dlp output"));
