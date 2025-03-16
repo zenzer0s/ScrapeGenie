@@ -18,9 +18,22 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     python3 python3-pip \
+    software-properties-common \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ~/.cache/* && \
     apt-get clean
+
+# Install FFmpeg (latest version with all codecs)
+RUN add-apt-repository ppa:savoury1/ffmpeg4 -y && \
+    apt update && apt install -y ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install GStreamer and all necessary plugins
+RUN apt update && apt install -y \
+    gstreamer1.0-tools gstreamer1.0-libav \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
 ENV NODE_ENV=production \
