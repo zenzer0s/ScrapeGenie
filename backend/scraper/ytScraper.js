@@ -1,11 +1,6 @@
 // ytScraper.js
 const puppeteer = require('puppeteer');
 const getBrowser = require('./browserManager');
-const { spawn } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-
-const pythonPath = process.env.PYTHON_PATH || "/usr/bin/python3";
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
@@ -132,74 +127,8 @@ async function ytScraper(videoUrl) {
   }
 }
 
-async function fetchYouTubeShort(url) {
-    return new Promise((resolve, reject) => {
-        const startTime = Date.now();
-        console.log(`\n⏱️ Starting YouTube Shorts process for: ${url}`);
-        
-        const scriptPath = path.join(__dirname, "ytdlp.py");
-        const downloadDir = "/dev/shm/youtube_tmp";
-
-        if (!fs.existsSync(downloadDir)) {
-            fs.mkdirSync(downloadDir, { recursive: true });
-        }
-
-        console.log(`📂 RAM disk directory: ${downloadDir}`);
-
-        const pythonStartTime = Date.now();
-        const process = spawn(pythonPath, [scriptPath, url, downloadDir]);
-
-        process.stdout.on("data", (data) => {
-            console.log("📥 yt-dlp progress:", data.toString());
-        });
-
-        process.stderr.on("data", (data) => {
-            console.error("❌ yt-dlp error:", data.toString());
-        });
-
-        process.on("close", (code) => {
-            const pythonEndTime = Date.now();
-            console.log(`⏱️ Python process: ${formatTime(pythonEndTime - pythonStartTime)}`);
-            if (code !== 0) {
-                return reject(new Error(`yt-dlp process exited with code ${code}`));
-            }
-
-            let output;
-            try {
-                const lines = data.toString().split('\n');
-                const jsonLine = lines.filter(line => line.trim().startsWith('{') && line.trim().endsWith('}')).pop();
-                if (!jsonLine) {
-                    throw new Error("No JSON found in yt-dlp output");
-                }
-                output = JSON.parse(jsonLine);
-                if (output.error) return reject(new Error(output.error));
-            } catch (parseError) {
-                console.error(`❌ JSON Parse Error: ${parseError.message}`);
-                return reject(new Error("Failed to parse yt-dlp output"));
-            }
-
-            resolve(output);
-
-            // Schedule cleanup after 5 minutes
-            setTimeout(() => {
-                try {
-                    if (fs.existsSync(output.file_path)) {
-                        fs.unlinkSync(output.file_path);
-                        console.log(`🧹 Cleaned up file: ${output.file_path}`);
-                    }
-                } catch (cleanupError) {
-                    console.error(`Failed to clean up file: ${cleanupError}`);
-                }
-            }, 5 * 60 * 1000);
-        });
-    });
-}
-
 async function scrapeYouTube(url) {
   return await ytScraper(url);
 }
 
-module.exports = { scrapeYouTube, fetchYouTubeShort };
-
-// Helper function for formatting time
-const formatTime = ms => (ms / 1000).toFixed(2) + 's';
+module.exports = { scrapeYouTube };
