@@ -18,9 +18,11 @@ router.post("/", async (req, res) => {
     console.log(`🟢 Received API request for: ${url}`);
 
     try {
-        // Inside your URL handling logic
+        let result;
+        
+        // Special handling for Pinterest URLs to handle authentication
         if (pinterestPattern.test(url)) {
-            const result = await scrapePinterest(url, userId);
+            result = await scrapePinterest(url, userId);
             
             if (!result.success) {
                 // Check if this is an authentication error
@@ -34,15 +36,13 @@ router.post("/", async (req, res) => {
                         userId: result.userId
                     });
                 }
-                
-                // Handle other errors...
             }
-            
-            // Process successful results...
+        } else {
+            // For all non-Pinterest URLs, use the general scraper
+            result = await scrapeContent(url, userId);
         }
-
-        const result = await scrapeContent(url, userId); // Pass userId to scrapeContent
-        console.log(`✅ Scraper Result:`, result); // Log output from scraperManager.js
+        
+        console.log(`✅ Scraper Result:`, result);
         
         if (!result || result.error) {
             return res.status(500).json({ success: false, error: "Scraping failed", details: result });
