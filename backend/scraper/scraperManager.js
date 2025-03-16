@@ -43,6 +43,9 @@ async function scrapeContent(url, userId = 'default') {
         } else if (PATTERNS.youtube.test(url)) {
             console.log("🎥 YouTube detected! Calling scrapeYouTube...");
             return await scrapeYouTube(url);
+        } else if (PATTERNS.youtubeShorts.test(url)) {
+            console.log("🎥 YouTube Shorts detected! ✅ Calling fetchYouTubeShort...");
+            return await fetchYouTubeShort(url);
         } else {
             console.log("🌍 General website detected! Calling scrapeWebsite...");
             return await scraper.scrapeWebsite(url);
