@@ -53,6 +53,7 @@ jobs:
             echo "PORT=8080" >> ~/app/.env
             echo "NODE_ENV=production" >> ~/app/.env
             echo "PYTHON_PATH=/usr/bin/python3" >> ~/app/.env
+            echo "YT_DLP_PATH=/usr/local/bin/yt-dlp" >> ~/app/.env  # Add this line
             
             # Pull the latest Docker image
             sudo docker pull ${{ env.DOCKER_HUB_REPO }}:latest
