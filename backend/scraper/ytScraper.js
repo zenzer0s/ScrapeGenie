@@ -1,6 +1,9 @@
 // ytScraper.js
 const puppeteer = require('puppeteer');
 const getBrowser = require('./browserManager');
+const { exec } = require("child_process");
+const path = require("path");
+const fs = require("fs");
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
@@ -127,8 +130,53 @@ async function ytScraper(videoUrl) {
   }
 }
 
+async function fetchYouTubeShort(url) {
+    return new Promise((resolve, reject) => {
+        const scriptPath = path.join(__dirname, "ytdlp.py");
+        const downloadDir = "/dev/shm/youtube_tmp";
+
+        if (!fs.existsSync(downloadDir)) {
+            fs.mkdirSync(downloadDir, { recursive: true });
+        }
+
+        console.log(`📂 RAM disk directory: ${downloadDir}`);
+
+        const command = `python3 "${scriptPath}" "${url}" "${downloadDir}"`;
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`❌ yt-dlp Error: ${stderr}`);
+                return reject(new Error(stderr));
+            }
+
+            console.log("Raw Python output:", stdout);
+
+            let output;
+            try {
+                output = JSON.parse(stdout.split("\n").pop());
+                if (output.error) return reject(new Error(output.error));
+            } catch (parseError) {
+                return reject(new Error("Failed to parse yt-dlp output"));
+            }
+
+            resolve(output);
+
+            // Schedule cleanup after 5 minutes
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(output.file_path)) {
+                        fs.unlinkSync(output.file_path);
+                        console.log(`🧹 Cleaned up file: ${output.file_path}`);
+                    }
+                } catch (cleanupError) {
+                    console.error(`Failed to clean up file: ${cleanupError}`);
+                }
+            }, 5 * 60 * 1000);
+        });
+    });
+}
+
 async function scrapeYouTube(url) {
   return await ytScraper(url);
 }
 
-module.exports = { scrapeYouTube };
+module.exports = { scrapeYouTube, fetchYouTubeShort };
