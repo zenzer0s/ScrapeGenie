@@ -2,6 +2,8 @@ const { v4: uuidv4 } = require('uuid');
 const { addLinkToQueue, getQueueStats } = require('../services/queueService');
 const { callScrapeApi } = require('../services/apiService');
 const { routeContent } = require('../handlers/contentRouter');
+const { truncateUrl } = require('../utils/urlUtils');
+const stepLogger = require('../utils/stepLogger');
 
 // Store active batches
 const activeBatches = new Map();
@@ -14,6 +16,11 @@ const activeBatches = new Map();
  * @returns {string} Batch ID
  */
 async function createBatch(links, chatId, userId) {
+  stepLogger.info('CREATE_BATCH_START', { 
+    linkCount: links.length, 
+    chatId 
+  });
+  
   // Create a unique batch ID
   const batchId = uuidv4();
   
@@ -38,6 +45,11 @@ async function createBatch(links, chatId, userId) {
   // Store in active batches
   activeBatches.set(batchId, batch);
   
+  stepLogger.info('CREATE_BATCH_SUCCESS', { 
+    batchId, 
+    linkCount: links.length 
+  });
+  
   return batchId;
 }
 
@@ -47,6 +59,8 @@ async function createBatch(links, chatId, userId) {
  * @param {Object} bot - Telegram bot instance
  */
 async function submitBatch(batchId, bot) {
+  stepLogger.info('SUBMIT_BATCH_START', { batchId });
+  
   const batch = activeBatches.get(batchId);
   
   if (!batch) {
@@ -62,6 +76,11 @@ async function submitBatch(batchId, bot) {
     
     batch.statusMessageId = statusMessage.message_id;
     
+    stepLogger.info('BATCH_STATUS_CREATED', { 
+      batchId, 
+      statusMessageId: statusMessage.message_id 
+    });
+    
     // Check queue status
     const stats = await getQueueStats();
     const useQueue = stats.status === 'enabled';
@@ -70,6 +89,12 @@ async function submitBatch(batchId, bot) {
     for (let i = 0; i < batch.links.length; i++) {
       const linkObj = batch.links[i];
       linkObj.processingOrder = i + 1;
+      
+      stepLogger.info('BATCH_ITEM_SUBMIT', { 
+        batchId, 
+        index: i, 
+        url: linkObj.url 
+      });
       
       if (useQueue) {
         // Add to queue with custom data
@@ -92,8 +117,13 @@ async function submitBatch(batchId, bot) {
     // Update status message
     updateStatusMessage(bot, batch);
     
+    stepLogger.info('SUBMIT_BATCH_COMPLETE', { batchId });
+    
   } catch (error) {
-    console.error(`Error submitting batch ${batchId}:`, error);
+    stepLogger.error('SUBMIT_BATCH_FAILED', { 
+      batchId, 
+      error: error.message 
+    });
     
     // Try to notify user
     await bot.sendMessage(
@@ -113,9 +143,19 @@ async function submitBatch(batchId, bot) {
  * @param {number} index - Index of the link in the batch
  */
 async function processBatchItem(bot, batchId, index) {
+  stepLogger.info('PROCESS_BATCH_ITEM_START', { 
+    batchId, 
+    index 
+  });
+  
   const batch = activeBatches.get(batchId);
   
   if (!batch || index >= batch.links.length) {
+    stepLogger.warn('PROCESS_BATCH_ITEM_INVALID', { 
+      batchId, 
+      index,
+      batchExists: !!batch
+    });
     return;
   }
   
@@ -137,13 +177,24 @@ async function processBatchItem(bot, batchId, index) {
     // Update status message
     updateStatusMessage(bot, batch);
     
+    stepLogger.info('PROCESS_BATCH_ITEM_SUCCESS', { 
+      batchId, 
+      index,
+      url: linkObj.url
+    });
+    
     // Check if batch is complete
     if (batch.completedCount + batch.failedCount === batch.links.length) {
       await finalizeBatch(bot, batchId);
     }
     
   } catch (error) {
-    console.error(`Error processing batch item:`, error);
+    stepLogger.error('PROCESS_BATCH_ITEM_FAILED', { 
+      batchId, 
+      index,
+      url: linkObj.url,
+      error: error.message
+    });
     
     // Update status to failed
     linkObj.status = 'failed';
@@ -177,8 +228,18 @@ async function updateStatusMessage(bot, batch) {
         parse_mode: 'HTML'
       }
     );
+    
+    stepLogger.info('UPDATE_STATUS_MESSAGE', { 
+      batchId: batch.id,
+      completed: batch.completedCount,
+      failed: batch.failedCount,
+      total: batch.links.length
+    });
   } catch (error) {
-    console.error(`Error updating status message:`, error);
+    stepLogger.error('UPDATE_STATUS_MESSAGE_FAILED', { 
+      batchId: batch.id,
+      error: error.message
+    });
   }
 }
 
@@ -227,24 +288,17 @@ function generateStatusMessage(batch) {
 }
 
 /**
- * Truncate a URL to a reasonable length
- * @param {string} url - URL to truncate
- * @returns {string} Truncated URL
- */
-function truncateUrl(url) {
-  if (url.length <= 40) return url;
-  return url.substring(0, 37) + '...';
-}
-
-/**
  * Finalize a batch and send all results
  * @param {Object} bot - Telegram bot instance
  * @param {string} batchId - Batch ID
  */
 async function finalizeBatch(bot, batchId) {
+  stepLogger.info('FINALIZE_BATCH_START', { batchId });
+  
   const batch = activeBatches.get(batchId);
   
   if (!batch) {
+    stepLogger.warn('FINALIZE_BATCH_NOT_FOUND', { batchId });
     return;
   }
   
@@ -255,26 +309,44 @@ async function finalizeBatch(bot, batchId) {
     // Send results
     await bot.sendMessage(
       batch.chatId,
-      `✅ Batch processing complete! Sending results...`
+      `✅ Batch processing complete! Sending results in order...`
     );
+    
+    // Wait a moment for UI clarity
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Send each result in order
     for (const link of batch.links) {
       if (link.status === 'completed' && link.result) {
         await routeContent(bot, batch.chatId, link.url, link.result);
+        
+        // Add a small delay between messages for better readability
+        await new Promise(resolve => setTimeout(resolve, 500));
       } else if (link.status === 'failed') {
         await bot.sendMessage(
           batch.chatId,
           `❌ Failed to process ${link.url}: ${link.error || 'Unknown error'}`
         );
+        
+        // Add a small delay between messages
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
+    
+    stepLogger.info('FINALIZE_BATCH_COMPLETE', { 
+      batchId, 
+      completed: batch.completedCount,
+      failed: batch.failedCount
+    });
     
     // Clean up
     activeBatches.delete(batchId);
     
   } catch (error) {
-    console.error(`Error finalizing batch ${batchId}:`, error);
+    stepLogger.error('FINALIZE_BATCH_FAILED', { 
+      batchId, 
+      error: error.message 
+    });
     
     // Try to notify user
     await bot.sendMessage(
@@ -296,9 +368,20 @@ async function finalizeBatch(bot, batchId) {
  * @param {boolean} success - Whether processing was successful
  */
 async function updateBatchItemStatus(bot, batchId, index, result, success) {
+  stepLogger.info('UPDATE_BATCH_ITEM_STATUS', { 
+    batchId, 
+    index,
+    success 
+  });
+  
   const batch = activeBatches.get(batchId);
   
   if (!batch || index >= batch.links.length) {
+    stepLogger.warn('UPDATE_BATCH_ITEM_STATUS_INVALID', { 
+      batchId, 
+      index,
+      batchExists: !!batch
+    });
     return;
   }
   
