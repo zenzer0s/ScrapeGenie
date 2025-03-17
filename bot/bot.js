@@ -1,3 +1,18 @@
+// At the beginning of your file, before other initializations:
+
+// Separate console logs from step logs
+const originalConsoleLog = console.log;
+console.log = function(...args) {
+  // Only log non-step-logger messages to console (which gets redirected to bot.log)
+  const isStepLogMessage = args.length > 0 && 
+    typeof args[0] === 'string' && 
+    args[0].includes('[INFO]');
+  
+  if (!isStepLogMessage) {
+    originalConsoleLog.apply(console, args);
+  }
+};
+
 // Import configuration and libraries
 const config = require('./config/botConfig');
 const TelegramBot = require('node-telegram-bot-api');
@@ -22,6 +37,7 @@ const { setupMaintenanceTasks } = require('./services/maintenanceService');
 const { initQueueProcessor } = require('./services/queueWorker');
 const logger = require('./logger');
 const queueService = require('./services/queueService');
+const GroupProcessor = require('./group/groupProcessor');
 
 // Set up Axios to retry failed requests
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
@@ -135,12 +151,54 @@ bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
   // ...
 });
 
+// Add this command handler
+bot.onText(/\/group/, async (msg) => {
+  try {
+    await require('./commands/group').process(bot, msg, groupProcessor);
+  } catch (error) {
+    console.error('Error handling /group command:', error);
+  }
+});
+
+// Register the group command
+bot.onText(/\/register/, async (msg) => {
+  try {
+    await require('./commands/registerGroup')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /register command:', error);
+  }
+});
+
+// Add these commands to your bot.js file
+
+// Process command - starts forwarded message collection
+bot.onText(/\/process/, async (msg) => {
+  try {
+    await require('./commands/process')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /process command:', error);
+  }
+});
+
+// Collect command - processes collected messages
+bot.onText(/\/collect/, async (msg) => {
+  try {
+    await require('./commands/collect')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /collect command:', error);
+  }
+});
+
+// Make groupProcessor globally accessible
+global.groupProcessor = null;
+
 // Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
   try {
-    await handleMessage(bot, msg);
+    await handleMessage(bot, msg, groupProcessor);
   } catch (error) {
     console.error("Error handling message:", error);
+    logger.error(`Error handling message: ${error.message}`);
   }
 });
 
@@ -165,13 +223,43 @@ process.on('unhandledRejection', (reason, promise) => {
 // Setup maintenance tasks
 setupMaintenanceTasks();
 
-// Initialize the queue processor
+// Initialize the queue processor and group processor
+let groupProcessor;
+
 (async () => {
   try {
+    // Initialize the queue processor
     await initQueueProcessor(bot);
     console.log("✅ Queue processor initialized");
+    
+    // Initialize the group processor
+    console.log("🔄 Initializing group processor...");
+    const groupProcessor = new GroupProcessor(bot);
+    await groupProcessor.initialize();
+    
+    // Store in global for access from commands
+    global.groupProcessor = groupProcessor;
+    
+    if (groupProcessor.groupInfo) {
+      console.log(`✅ Group processor initialized for "${groupProcessor.groupInfo.title}"`);
+      
+      // Process any pending messages in the group
+      console.log("🔄 Checking for unprocessed messages in group...");
+      const processedCount = await groupProcessor.processUnprocessedMessages();
+      
+      if (processedCount > 0) {
+        console.log(`✅ Processing ${processedCount} links from group`);
+      } else {
+        console.log("✅ No pending links in group");
+      }
+    } else {
+      console.warn("⚠️ Group processor initialization failed. To use the group feature:");
+      console.warn("1. Create a Telegram group for collecting links");
+      console.warn("2. Add this bot to the group");
+      console.warn("3. Run /register command in that group");
+    }
   } catch (error) {
-    console.error("❌ Queue initialization error:", error.message);
+    console.error("❌ Initialization error:", error.message);
   }
 })();
 
