@@ -1,6 +1,7 @@
 const Queue = require('bull');
 const path = require('path');
 const fs = require('fs');
+const stepLogger = require('../utils/stepLogger');
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, '../../logs');
@@ -25,6 +26,7 @@ let queueEnabled = false;
 
 // Initialize the queue
 async function initQueue() {
+  stepLogger.info('INIT_QUEUE_START');
   try {
     // Create Bull queue with Redis connection
     linkQueue = new Queue('link-processing', {
@@ -65,8 +67,10 @@ async function initQueue() {
     await linkQueue.getJobCounts();
     queueEnabled = true;
     logQueue('✅ Queue initialized successfully');
+    stepLogger.info('INIT_QUEUE_SUCCESS', { queueEnabled: true });
     return true;
   } catch (error) {
+    stepLogger.error('INIT_QUEUE_FAILED', { error: error.message });
     logQueue(`❌ Queue initialization failed: ${error.message}`);
     queueEnabled = false;
     return false;
@@ -79,6 +83,8 @@ initQueue();
 // Add a job to the queue
 async function addLinkToQueue(url, chatId, userId, messageId) {
   try {
+    stepLogger.info('ADD_TO_QUEUE_START', { url, chatId });
+    
     if (!queueEnabled || !linkQueue) {
       throw new Error('Queue system disabled');
     }
@@ -92,8 +98,10 @@ async function addLinkToQueue(url, chatId, userId, messageId) {
     });
     
     logQueue(`➕ Added job ${job.id} to queue: ${url} for chat ${chatId}`);
+    stepLogger.info('ADD_TO_QUEUE_SUCCESS', { jobId: job.id, url });
     return job;
   } catch (error) {
+    stepLogger.error('ADD_TO_QUEUE_FAILED', { url, error: error.message });
     logQueue(`❌ Failed to add job to queue: ${error.message}`);
     throw error;
   }
