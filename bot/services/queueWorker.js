@@ -2,6 +2,7 @@ const { linkQueue, isQueueEnabled, initQueue } = require('./queueService');
 const { callScrapeApi } = require('./apiService');
 const { routeContent } = require('../handlers/contentRouter');
 const { updateBatchItemStatus } = require('../batch/batchProcessor');
+const stepLogger = require('../utils/stepLogger');
 
 /**
  * Initialize the queue processor with the bot instance
@@ -28,6 +29,13 @@ async function initQueueProcessor(bot) {
       const { url, chatId, userId, messageId } = job.data;
       const batchInfo = typeof messageId === 'object' ? messageId : null;
       
+      stepLogger.info('PROCESS_JOB_START', { 
+        jobId: job.id, 
+        url, 
+        chatId, 
+        batchId: batchInfo?.batchId || 'none' 
+      });
+      
       console.log(`🔄 Processing queued link: ${url} for chat ${chatId}`);
       
       try {
@@ -43,12 +51,24 @@ async function initQueueProcessor(bot) {
             // Update batch status
             await updateBatchItemStatus(bot, batchId, index, data, true);
             
+            stepLogger.info('PROCESS_JOB_SUCCESS', { 
+              jobId: job.id, 
+              url,
+              batchId: batchInfo?.batchId || 'none'
+            });
+            
             return { success: true, url, batchId, index };
           } catch (error) {
             console.error(`❌ Job processing error: ${error.message}`);
             
             // Update batch status with error
             await updateBatchItemStatus(bot, batchId, index, error, false);
+            
+            stepLogger.error('PROCESS_JOB_FAILED', { 
+              jobId: job.id, 
+              url, 
+              error: error.message 
+            });
             
             throw error; // Let Bull know the job failed
           }
@@ -80,10 +100,23 @@ async function initQueueProcessor(bot) {
           
           // Route content to appropriate handler
           await routeContent(bot, chatId, url, data);
+          
+          stepLogger.info('PROCESS_JOB_SUCCESS', { 
+            jobId: job.id, 
+            url,
+            batchId: batchInfo?.batchId || 'none'
+          });
+          
           return { success: true };
         }
       } catch (error) {
         console.error(`❌ Job processing error: ${error.message}`);
+        
+        stepLogger.error('PROCESS_JOB_FAILED', { 
+          jobId: job.id, 
+          url, 
+          error: error.message 
+        });
         
         // Only handle non-batch jobs here
         if (!batchInfo) {
