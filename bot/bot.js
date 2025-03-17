@@ -21,6 +21,7 @@ const { checkBackendStatus } = require('./utils/statusUtils');
 const { setupMaintenanceTasks } = require('./services/maintenanceService');
 const { initQueueProcessor } = require('./services/queueWorker');
 const logger = require('./logger');
+const queueService = require('./services/queueService');
 
 // Set up Axios to retry failed requests
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
@@ -165,6 +166,13 @@ process.on('unhandledRejection', (reason, promise) => {
 setupMaintenanceTasks();
 
 // Initialize the queue processor
-initQueueProcessor(bot);
+(async () => {
+  try {
+    await initQueueProcessor(bot);
+    console.log("✅ Queue processor initialized");
+  } catch (error) {
+    console.error("❌ Queue initialization error:", error.message);
+  }
+})();
 
 console.log("✅ Bot initialization complete");
