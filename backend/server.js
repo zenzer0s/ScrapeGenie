@@ -11,6 +11,7 @@ const { createBullBoard } = require('@bull-board/api');
 const { BullAdapter } = require('@bull-board/api/bullAdapter');
 const { ExpressAdapter } = require('@bull-board/express');
 const Queue = require('bull');
+const { setupQueueDashboard } = require('./services/queueDashboard');
 
 // Ensure RAM disk directory exists
 const INSTAGRAM_TMP_DIR = "/dev/shm/instagram_tmp";
@@ -116,6 +117,14 @@ const basicAuth = (req, res, next) => {
 
 // Apply basic auth middleware to the bull board routes
 app.use('/admin/queues', basicAuth, serverAdapter.getRouter());
+
+(async () => {
+  try {
+    await setupQueueDashboard(app);
+  } catch (error) {
+    console.error(`Failed to setup queue dashboard: ${error.message}`);
+  }
+})();
 
 app.listen(PORT, () => {
     console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);
