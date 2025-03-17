@@ -1,6 +1,7 @@
 const { linkQueue, isQueueEnabled, initQueue } = require('./queueService');
 const { callScrapeApi } = require('./apiService');
 const { routeContent } = require('../handlers/contentRouter');
+const { updateBatchItemStatus } = require('../batch/batchProcessor');
 
 /**
  * Initialize the queue processor with the bot instance
@@ -22,59 +23,87 @@ async function initQueueProcessor(bot) {
   }
   
   try {
-    // Set up job processor
-    linkQueue.process(2, async (job) => {
+    // Set up job processor with concurrency 1 to ensure strict ordering
+    linkQueue.process(1, async (job) => {
       const { url, chatId, userId, messageId } = job.data;
+      const batchInfo = typeof messageId === 'object' ? messageId : null;
+      
       console.log(`🔄 Processing queued link: ${url} for chat ${chatId}`);
       
       try {
-        // Update the processing message if needed
-        if (messageId) {
+        // Handle batch status updates
+        if (batchInfo && batchInfo.updateStatus) {
+          // This is a batch job, update status
+          const { batchId, index } = batchInfo;
+          
           try {
-            await bot.editMessageText(
-              `⏳ Processing your link...`,
-              { chat_id: chatId, message_id: messageId }
-            );
-          } catch (err) {
-            // Ignore message update errors
+            // Call API
+            const data = await callScrapeApi(url, userId);
+            
+            // Update batch status
+            await updateBatchItemStatus(bot, batchId, index, data, true);
+            
+            return { success: true, url, batchId, index };
+          } catch (error) {
+            console.error(`❌ Job processing error: ${error.message}`);
+            
+            // Update batch status with error
+            await updateBatchItemStatus(bot, batchId, index, error, false);
+            
+            throw error; // Let Bull know the job failed
           }
-        }
-        
-        // Call API and process content
-        const data = await callScrapeApi(url, userId);
-        
-        // Clean up processing message
-        if (messageId) {
-          try {
-            await bot.deleteMessage(chatId, messageId);
-          } catch (err) {
-            // Ignore deletion errors
+        } else {
+          // Regular job (not batch)
+          // Update the processing message if needed
+          if (messageId && typeof messageId === 'number') {
+            try {
+              await bot.editMessageText(
+                `⏳ Processing your link...`,
+                { chat_id: chatId, message_id: messageId }
+              );
+            } catch (err) {
+              // Ignore message update errors
+            }
           }
+          
+          // Call API and process content
+          const data = await callScrapeApi(url, userId);
+          
+          // Clean up processing message
+          if (messageId && typeof messageId === 'number') {
+            try {
+              await bot.deleteMessage(chatId, messageId);
+            } catch (err) {
+              // Ignore deletion errors
+            }
+          }
+          
+          // Route content to appropriate handler
+          await routeContent(bot, chatId, url, data);
+          return { success: true };
         }
-        
-        // Route content to appropriate handler
-        await routeContent(bot, chatId, url, data);
-        return { success: true };
-        
       } catch (error) {
         console.error(`❌ Job processing error: ${error.message}`);
         
-        // Notify user of error
-        try {
-          if (messageId) {
-            await bot.editMessageText(
-              `❌ Error: ${error.message}`,
-              { chat_id: chatId, message_id: messageId }
-            );
-          } else {
-            await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
-          }
-        } catch (err) {
-          // Fallback error notification
+        // Only handle non-batch jobs here
+        if (!batchInfo) {
+          // Notify user of error
           try {
-            await bot.sendMessage(chatId, `❌ Error processing your link`);
-          } catch (finalErr) {
-            // Giving up on notification
+            if (messageId && typeof messageId === 'number') {
+              await bot.editMessageText(
+                `❌ Error: ${error.message}`,
+                { chat_id: chatId, message_id: messageId }
+              );
+            } else {
+              await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+            }
+          } catch (err) {
+            // Fallback error notification
+            try {
+              await bot.sendMessage(chatId, `❌ Error processing your link`);
+            } catch (finalErr) {
+              // Giving up on notification
+            }
           }
         }
         
