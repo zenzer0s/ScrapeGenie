@@ -1,328 +1,221 @@
-// bot/messageHandler.js
-const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
-const fs = require("fs");
-const path = require("path");
+const { extractUrl } = require('./utils/textUtils');
+const { callScrapeApi } = require('./services/apiService');
+const { addLinkToQueue, getQueueStats } = require('./services/queueService');
+const { routeContent } = require('./handlers/contentRouter');
+const { extractUrls } = require('./utils/urlUtils');
+const { createBatch, submitBatch } = require('./batch/batchProcessor');
+const stepLogger = require('./utils/stepLogger');
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://0.0.0.0:8080';
-const DOWNLOAD_DIR = "/home/zen/Documents/Pro/ScrapeGenie/downloads";
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, '../downloads');
 
+/**
+ * Handles messages containing URLs
+ * @param {TelegramBot} bot - The Telegram bot instance
+ * @param {object} msg - Telegram message object
+ * @returns {Promise<void>}
+ */
 async function handleUrlMessage(bot, msg) {
-  // Extract URL from message text
-  const text = msg.text;
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const match = urlRegex.exec(text);
-  
-  if (!match) {
-    return; // No URL found, exit the function
-  }
-  
-  const url = match[0];
+  const url = extractUrl(msg.text);
   const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (!url) return;
 
   try {
-    // Send "processing" message
+    // Send processing message
     const processingMsg = await bot.sendMessage(chatId, "⏳ Processing your URL...");
     
     // Show typing animation
     await bot.sendChatAction(chatId, 'typing');
     
-    console.log(`🔍 Calling API for URL: ${url}`);
+    // Check if we should queue or process directly
+    const stats = await getQueueStats();
+    const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 2);
     
-    // Identify URL type before making API call
-    const isInstagramUrl = url.includes('instagram.com') || url.includes('instagr.am');
-    const isPinterestUrl = url.includes('pinterest.com') || url.includes('pin.it');
-    const isYoutubeUrl = url.includes('youtube.com') || url.includes('youtu.be');
-    
-    // Make the API call
-    const response = await axios.post(`${BACKEND_URL}/api/scrape`, { 
-      url,
-      userId: msg.from.id.toString() 
-    });
-    
-    // Log the response for debugging
-    console.log("API Response:", JSON.stringify(response.data, null, 2));
-    
-    // Delete processing message
-    await bot.deleteMessage(chatId, processingMsg.message_id);
-    
-    // Handle Instagram separately as it has a different response structure
-    if (isInstagramUrl) {
+    if (shouldQueue) {
       try {
-        if (!response.data || !response.data.success || !response.data.data) {
-          throw new Error('Instagram scraping failed');
-        }
+        // Update message to indicate queueing
+        await bot.editMessageText(
+          "🔍 Adding your link to the processing queue...", 
+          { chat_id: chatId, message_id: processingMsg.message_id }
+        );
         
-        const data = response.data.data;
-        const mediaPath = data.mediaPath;
-        let caption = data.caption || '';
-        const isVideo = data.is_video || false;
-        const isCarousel = data.is_carousel || false;
+        // Add to queue
+        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
         
-        console.log(`📂 Media path:`, mediaPath);
-        console.log(`🎬 Is video: ${isVideo}, Is carousel: ${isCarousel}`);
-        
-        // Create keyboard markup with URL
-        const keyboard = {
-          inline_keyboard: [
-            [{ text: '📱 Open in Instagram', url: url }]
-          ]
-        };
-        
-        // Handle carousel posts (multiple images)
-        if (isCarousel && Array.isArray(mediaPath) && mediaPath.length > 0) {
-          console.log(`🖼️ Sending carousel with ${mediaPath.length} images...`);
-          
-          // Split mediaPath into chunks of 6 images each
-          const mediaChunks = [];
-          for (let i = 0; i < mediaPath.length; i += 6) {
-            mediaChunks.push(mediaPath.slice(i, i + 6));
-          }
-          
-          for (const chunk of mediaChunks) {
-            // Prepare media group format for Telegram
-            const mediaGroup = chunk.map((filePath) => {
-              if (!fs.existsSync(filePath)) {
-                console.warn(`⚠️ File not found: ${filePath}`);
-                return null;
-              }
-              
-              return {
-                type: 'photo',
-                media: fs.createReadStream(filePath),
-                parse_mode: 'HTML'
-              };
-            }).filter(Boolean); // Remove any nulls from non-existent files
-            
-            if (mediaGroup.length === 0) {
-              throw new Error('No valid files found in carousel');
-            }
-            
-            // Send as media group
-            await bot.sendMediaGroup(chatId, mediaGroup);
-          }
-          
-          // Send caption separately if there are more than 6 images
-          if (mediaPath.length > 6) {
-            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML', reply_markup: keyboard });
-          } else {
-            // Send button separately since media groups don't support inline keyboards
-            await bot.sendMessage(chatId, '📱 View original post:', {
-              reply_markup: keyboard
-            });
-          }
-          
-        } else if (isVideo) {
-          // Single video
-          if (!fs.existsSync(mediaPath)) {
-            throw new Error(`Video file not found at: ${mediaPath}`);
-          }
-          
-          console.log('📹 Sending video...');
-          await bot.sendVideo(chatId, mediaPath, {
-            caption: caption.length <= 1024 ? caption : '',
-            reply_markup: keyboard
-          });
-          
-          // Send caption separately if it's too long
-          if (caption.length > 1024) {
-            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
-          }
-          
-        } else {
-          // Single image
-          if (!fs.existsSync(mediaPath)) {
-            throw new Error(`Image file not found at: ${mediaPath}`);
-          }
-          
-          console.log('🖼️ Sending single image...');
-          await bot.sendPhoto(chatId, mediaPath, {
-            caption: caption.length <= 1024 ? caption : '',
-            reply_markup: keyboard
-          });
-          
-          // Send caption separately if it's too long
-          if (caption.length > 1024) {
-            await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
-          }
-        }
-        
-        console.log('✅ Instagram content sent successfully');
-        return;
-      } catch (error) {
-        console.error(`❌ Instagram error: ${error.message}`);
+        // Inform about queue position
         await bot.sendMessage(
-          chatId,
-          `❌ Sorry, I could not process this Instagram link.\nError: ${error.message}`,
-          { parse_mode: 'Markdown' }
+          chatId, 
+          `📊 Your link is #${stats.waiting + 1} in queue and will be processed soon.`
         );
         return;
+      } catch (err) {
+        console.log("Queue error, falling back to direct processing:", err.message);
       }
     }
     
-    // Handle Pinterest and YouTube (these have data.type structure)
-    if (!response.data.success || !response.data.data) {
-      throw new Error('Scraping failed');
-    }
-    
-    const data = response.data.data;
-    
-    // Create keyboard markup with URL - dynamic text based on URL type
-    const keyboard = {
-      inline_keyboard: [
-        [
-          {
-            text: isYoutubeUrl ? '🎬 Watch on YouTube' : 
-                  isPinterestUrl ? '📌 View on Pinterest' :
-                  isInstagramUrl ? '📷 View on Instagram' : 
-                  '🌐 Open Website',
-            url: url
-          }
-        ]
-      ]
-    };
-
-    // Handle different content types
-    if (isYoutubeUrl && data.filepath) {
-      const caption = `*${escapeMarkdown(data.title || '')}*`;
-      
-      if (!fs.existsSync(data.filepath)) {
-        throw new Error(`Video file not found at: ${data.filepath}`);
-      }
-      
-      console.log('📹 Sending YouTube video...');
-      await bot.sendVideo(chatId, data.filepath, {
-        caption: caption,
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
-    } else if (data.type === 'youtube') {
-      const caption = `*${escapeMarkdown(data.title)}*`;
-      
-      if (data.mediaUrl) {
-        await bot.sendPhoto(chatId, data.mediaUrl, { 
-          caption: caption, 
-          parse_mode: 'Markdown',
-          reply_markup: keyboard 
-        });
-      } else {
-        await bot.sendMessage(chatId, caption, { 
-          parse_mode: 'Markdown',
-          reply_markup: keyboard 
-        });
-      }
-    } else if (data.type === 'pinterest') {
-      await bot.sendPhoto(chatId, data.mediaUrl, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
-    } else {
-      // Handle generic/unknown content types
-      let message = '';
-      
-      // Title in bold
-      if (data.title) {
-        message += `*${escapeMarkdown(data.title)}*`; 
-      }
-      
-      // Only add content if it's not a placeholder
-      if (data.content && !data.content.startsWith('Content from')) {
-        message += `\n\n${data.content}`;
-      }
-      
-      // Send message if we have content
-      if (message.trim()) {
-        await sendSafeMessage(bot, chatId, message, {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard
-        });
-      } else {
-        await sendSafeMessage(bot, chatId, "Website information retrieved", {
-          reply_markup: keyboard
-        });
-      }
-    }
-    
-  } catch (error) {
-    console.error(`❌ Error handling URL: ${error.message}`);
-    logger.error(`Error handling URL: ${error}`);
-    
-    // Check if this is a Pinterest authentication error
-    if (error.response?.status === 401 && 
-        error.response.data?.requiresAuth && 
-        error.response.data?.service === 'pinterest') {
-      
-      console.log('🔐 Pinterest authentication required');
-      
-      await bot.sendMessage(
-        chatId,
-        "🔐 *Pinterest Login Required*\n\n" +
-        "To download content from Pinterest, you need to login first.\n\n" +
-        "Please tap the button below to log in, then send your Pinterest link again.",
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔐 Login to Pinterest", callback_data: "pinterest_login" }]
-            ]
-          }
-        }
+    // Direct processing
+    try {
+      await bot.editMessageText(
+        "⚙️ Processing your link...", 
+        { chat_id: chatId, message_id: processingMsg.message_id }
       );
+      
+      const data = await callScrapeApi(url, userId);
+      await bot.deleteMessage(chatId, processingMsg.message_id);
+      await routeContent(bot, chatId, url, data);
+      
+    } catch (error) {
+      console.error("Processing error:", error.message);
+      
+      // Handle specific errors (e.g., Pinterest auth required) here
+      // ...
+      
+      // Generic error handling
+      await bot.editMessageText(
+        `❌ Error: ${error.message}`,
+        { chat_id: chatId, message_id: processingMsg.message_id }
+      );
+    }
+  } catch (error) {
+    console.error(`Critical error: ${error.message}`);
+    await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
+  }
+}
+
+/**
+ * Handles queue status command
+ * @param {TelegramBot} bot - The Telegram bot instance
+ * @param {object} msg - Telegram message object
+ * @returns {Promise<void>}
+ */
+async function handleQueueCommand(bot, msg) {
+  try {
+    const stats = await getQueueStats();
+    
+    await bot.sendMessage(msg.chat.id, 
+      `📊 *Queue Status*\n\n` +
+      `• Waiting: ${stats.waiting}\n` +
+      `• Processing: ${stats.active}\n` +
+      `• Completed: ${stats.completed}\n` +
+      `• Failed: ${stats.failed}\n\n` +
+      `Total pending: ${stats.total}`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error("Error handling queue command:", error);
+    await bot.sendMessage(msg.chat.id, "Sorry, I couldn't retrieve queue status.");
+  }
+}
+
+/**
+ * Main message handler
+ * @param {TelegramBot} bot - The Telegram bot instance
+ * @param {object} msg - Telegram message object
+ * @param {object} groupProcessor - Group message processor
+ * @returns {Promise<void>}
+ */
+async function handleMessage(bot, msg, groupProcessor) {
+  // Check if this is a forwarded message and we have a pending collection
+  if (msg.forward_date && global.pendingCollections && global.pendingCollections[msg.from.id]) {
+    const collection = global.pendingCollections[msg.from.id];
+    
+    // Add the message text to the collection
+    if (msg.text) {
+      collection.messages.push(msg.text);
+      
+      // Send a brief acknowledgment
+      await bot.sendMessage(
+        msg.chat.id,
+        `📌 URL message collected (${collection.messages.length} total)`
+      );
+    }
+    return;
+  }
+
+  const urls = extractUrls(msg.text || '');
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (urls.length === 0) {
+    // Handle non-URL messages
+    return;
+  }
+
+  stepLogger.info('MESSAGE_RECEIVED', { 
+    chatId, 
+    urlCount: urls.length 
+  });
+  
+  try {
+    // Check if this message is in our tracked group
+    if (groupProcessor && groupProcessor.isGroupChat(chatId)) {
+      // Let the group processor handle it
+      await groupProcessor.handleGroupMessage(msg);
       return;
     }
     
-    // Original error handling for other errors
-    try {
-      await bot.sendMessage(chatId, `❌ Sorry, I encountered an error processing your request.\nError: ${error.message}`);
-    } catch (sendError) {
-      console.error(`Failed to send error message: ${sendError.message}`);
+    // Multiple URLs - use batch processor immediately
+    if (urls.length > 1) {
+      stepLogger.info('MULTIPLE_URLS_DETECTED', {
+        chatId,
+        urlCount: urls.length
+      });
+      
+      await bot.sendMessage(chatId, `🔍 Found ${urls.length} links in your message. Processing as a batch...`);
+      
+      // Create and submit batch
+      const batchId = await createBatch(urls, chatId, userId);
+      await submitBatch(batchId, bot);
+      return;
     }
-  }
-}
-
-// Add this improved escapeMarkdown function
-function escapeMarkdown(text) {
-  if (!text) return '';
-  return text
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/\*/g, '\\*')
-    .replace(/\_/g, '\\_')
-    .replace(/\`/g, '\\`')
-    .replace(/\~/g, '\\~');
-}
-
-// Add this safe message sending function
-async function sendSafeMessage(bot, chatId, text, options = {}) {
-  try {
-    // Try with original options first
-    return await bot.sendMessage(chatId, text, options);
+    
+    // Single URL - process as usual
+    const url = urls[0];
+    stepLogger.info('SINGLE_URL_DETECTED', {
+      chatId,
+      url
+    });
+    
+    // Send processing message
+    const processingMsg = await bot.sendMessage(chatId, "⏳ Processing your URL...");
+    
+    // Show typing animation
+    await bot.sendChatAction(chatId, 'typing');
+    
+    // Check if we should queue or process directly
+    const stats = await getQueueStats();
+    const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 1);
+    
+    if (shouldQueue) {
+      // Add to queue
+      await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
+    } else {
+      // Process directly
+      try {
+        const data = await callScrapeApi(url, userId);
+        await bot.deleteMessage(chatId, processingMsg.message_id);
+        await routeContent(bot, chatId, url, data);
+      } catch (error) {
+        await bot.editMessageText(
+          `❌ Error: ${error.message}`,
+          { chat_id: chatId, message_id: processingMsg.message_id }
+        );
+      }
+    }
   } catch (error) {
-    if (error.message.includes('can\'t parse entities')) {
-      console.log('⚠️ Formatting error, sending without parse_mode');
-      const safeOptions = { ...options };
-      delete safeOptions.parse_mode;
-      return await bot.sendMessage(chatId, text, safeOptions);
-    }
-    throw error;
+    stepLogger.error('MESSAGE_HANDLER_ERROR', { 
+      error: error.message 
+    });
+    await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
   }
 }
 
-function cleanupInstagramText(text) {
-  if (!text) return '';
-  
-  return text
-    // Remove all hashtags completely
-    .replace(/#\w+/g, '')
-    // Remove excessive line breaks
-    .replace(/\n{3,}/g, '\n\n')
-    // Remove excessive dots
-    .replace(/\.{2,}/g, '...')
-    // Clean up spaces
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-module.exports = { handleUrlMessage };
+module.exports = { 
+  handleMessage,
+  handleUrlMessage,
+  handleQueueCommand
+};

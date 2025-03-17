@@ -1,44 +1,26 @@
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+// At the beginning of your file, before other initializations:
 
-// Add debug logging
-console.log("🔍 Directory check:");
-console.log(`• Current directory: ${__dirname}`);
-console.log(`• Project root: ${path.resolve(__dirname, '..')}`);
-
-// Ensure required directories exist
-const fs = require('fs');
-const dirs = [
-  path.resolve(__dirname, '../data'),
-  path.resolve(__dirname, '../data/sessions'),
-  path.resolve(__dirname, '../logs'),
-  path.resolve(__dirname, '../downloads')
-];
-
-dirs.forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    console.log(`✅ Created directory: ${dir}`);
+// Separate console logs from step logs
+const originalConsoleLog = console.log;
+console.log = function(...args) {
+  // Only log non-step-logger messages to console (which gets redirected to bot.log)
+  const isStepLogMessage = args.length > 0 && 
+    typeof args[0] === 'string' && 
+    args[0].includes('[INFO]');
+  
+  if (!isStepLogMessage) {
+    originalConsoleLog.apply(console, args);
   }
-});
+};
 
-console.log("🔍 Environment check:");
-console.log(`• BACKEND_URL: ${process.env.BACKEND_URL}`);
-console.log(`• PORT: ${process.env.PORT}`);
-console.log(`• USE_WEBHOOK: ${process.env.USE_WEBHOOK}`);
-console.log(`• PUBLIC_URL: ${process.env.PUBLIC_URL || 'Not set'}`);
-
-if (!process.env.BACKEND_URL) {
-  console.error("⚠️ BACKEND_URL is not set! Setting default value...");
-  process.env.BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
-  console.log(`• BACKEND_URL (default): ${process.env.BACKEND_URL}`);
-}
-
-// Import libraries for the bot framework
+// Import configuration and libraries
+const config = require('./config/botConfig');
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const express = require('express');
+
+// Import commands and handlers
 const { 
   startCommand, 
   helpCommand, 
@@ -48,30 +30,17 @@ const {
   pinterestLogoutCommand,
   pinterestStatusCommand
 } = require('./commands');
-const { handleUrlMessage } = require('./messageHandler');
+const { handleMessage } = require('./messageHandler');
+const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/callbackHandler');
+const { checkBackendStatus } = require('./utils/statusUtils');
+const { setupMaintenanceTasks } = require('./services/maintenanceService');
+const { initQueueProcessor } = require('./services/queueWorker');
 const logger = require('./logger');
+const queueService = require('./services/queueService');
+const GroupProcessor = require('./group/groupProcessor');
 
 // Set up Axios to retry failed requests
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
-
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const BACKEND_URL = process.env.BACKEND_URL || `http://0.0.0.0:${process.env.PORT || 8000}`;
-const PORT = process.env.PORT || 8080;
-
-// Webhook configuration
-const USE_WEBHOOK = process.env.USE_WEBHOOK === 'true';
-const PUBLIC_URL = process.env.PUBLIC_URL || '';
-
-if (!token) {
-  console.error("❌ Telegram Bot Token not found! Check your .env file.");
-  logger.error("❌ Telegram Bot Token not found! Check your .env file.");
-  process.exit(1);
-}
-
-if (USE_WEBHOOK && !PUBLIC_URL) {
-  console.warn("⚠️ USE_WEBHOOK is true but PUBLIC_URL is not set. Webhook setup may fail.");
-  logger.warn("USE_WEBHOOK is true but PUBLIC_URL is not set. Webhook setup may fail.");
-}
 
 // Create Express app for webhook mode
 const app = express();
@@ -82,18 +51,16 @@ app.get('/health', (req, res) => {
   res.status(200).send({ status: 'ok', timestamp: new Date() });
 });
 
+// Initialize Telegram bot
 let bot;
 
-// ===== NODE-TELEGRAM-BOT-API IMPLEMENTATION =====
-console.log("🔄 Using node-telegram-bot-api implementation");
-
-if (USE_WEBHOOK) {
+if (config.useWebhook) {
   // Webhook configuration
-  if (PUBLIC_URL) {
-    const webhookPath = `/bot${token}`;
-    const webhookUrl = `${PUBLIC_URL}${webhookPath}`;
+  if (config.publicUrl) {
+    const webhookPath = `/bot${config.token}`;
+    const webhookUrl = `${config.publicUrl}${webhookPath}`;
     
-    bot = new TelegramBot(token, { webHook: { port: PORT } });
+    bot = new TelegramBot(config.token, { webHook: { port: config.port } });
     
     // Set the webhook
     bot.setWebHook(webhookUrl)
@@ -111,8 +78,8 @@ if (USE_WEBHOOK) {
     
     // If not started via setWebHook, start the Express server
     if (!app.listening) {
-      app.listen(PORT, () => {
-        console.log(`🚀 Webhook server running on port ${PORT}`);
+      app.listen(config.port, () => {
+        console.log(`🚀 Webhook server running on port ${config.port}`);
       });
     }
     
@@ -124,20 +91,8 @@ if (USE_WEBHOOK) {
   }
 } else {
   // Polling mode
-  bot = new TelegramBot(token, { polling: true });
+  bot = new TelegramBot(config.token, { polling: true });
   console.log("🚀 Bot is running in polling mode...");
-}
-
-// Function to delete messages after a delay
-async function deleteMessageAfterDelay(bot, chatId, messageId, delay) {
-  setTimeout(async () => {
-    try {
-      await bot.deleteMessage(chatId, messageId);
-      console.log(`🗑️ Deleted message ${messageId} from chat ${chatId}`);
-    } catch (error) {
-      console.error(`❌ Failed to delete message ${messageId} from chat ${chatId}:`, error.message);
-    }
-  }, delay);
 }
 
 // Register command handlers
@@ -196,91 +151,61 @@ bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
   // ...
 });
 
-// Delegate URL message processing to messageHandler.js
+// Add this command handler
+bot.onText(/\/group/, async (msg) => {
+  try {
+    await require('./commands/group').process(bot, msg, groupProcessor);
+  } catch (error) {
+    console.error('Error handling /group command:', error);
+  }
+});
+
+// Register the group command
+bot.onText(/\/register/, async (msg) => {
+  try {
+    await require('./commands/registerGroup')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /register command:', error);
+  }
+});
+
+// Add these commands to your bot.js file
+
+// Process command - starts forwarded message collection
+bot.onText(/\/process/, async (msg) => {
+  try {
+    await require('./commands/process')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /process command:', error);
+  }
+});
+
+// Collect command - processes collected messages
+bot.onText(/\/collect/, async (msg) => {
+  try {
+    await require('./commands/collect')(bot, msg);
+  } catch (error) {
+    console.error('Error handling /collect command:', error);
+  }
+});
+
+// Make groupProcessor globally accessible
+global.groupProcessor = null;
+
+// Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
-  await handleUrlMessage(bot, msg);
+  try {
+    await handleMessage(bot, msg, groupProcessor);
+  } catch (error) {
+    console.error("Error handling message:", error);
+    logger.error(`Error handling message: ${error.message}`);
+  }
 });
 
 // Setup callback query handler
 bot.on('callback_query', async (callbackQuery) => {
-  const action = callbackQuery.data;
-  const msg = callbackQuery.message;
-  const chatId = msg.chat.id;
-  
-  // Acknowledge the callback
-  await bot.answerCallbackQuery(callbackQuery.id);
-  
-  // Process the action
-  switch (action) {
-    case 'start':
-      const startResult = await startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      deleteMessageAfterDelay(bot, chatId, startResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'help':
-      const helpResult = await helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      deleteMessageAfterDelay(bot, chatId, helpResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'status':
-      const statusResult = await statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus);
-      deleteMessageAfterDelay(bot, chatId, statusResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'usage':
-      const usageResult = await usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      deleteMessageAfterDelay(bot, chatId, usageResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'pinterest_login':
-      const pinterestLoginResult = await pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      pinterestLoginResult.sentMessages.forEach(sentMessage => {
-        deleteMessageAfterDelay(bot, chatId, sentMessage.message_id, 15000);
-      });
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'pinterest_logout':
-      const pinterestLogoutResult = await pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      deleteMessageAfterDelay(bot, chatId, pinterestLogoutResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    case 'pinterest_status':
-      const pinterestStatusResult = await pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from });
-      deleteMessageAfterDelay(bot, chatId, pinterestStatusResult.sentMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-      break;
-    default:
-      const unknownCommandMessage = await bot.sendMessage(chatId, "Unknown command");
-      deleteMessageAfterDelay(bot, chatId, unknownCommandMessage.message_id, 15000);
-      deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
-  }
+  await handleCallbackQuery(bot, callbackQuery, checkBackendStatus);
 });
-
-// Check backend status function
-async function checkBackendStatus() {
-  try {
-    await axios.get(`${BACKEND_URL}/health`);
-    return true;
-  } catch (error) {
-    console.error('Backend status check failed:', error);
-    logger.error(`Backend status check failed: ${error.stack || error}`);
-    return false;
-  }
-}
-
-// Auto clean bot-error.log every 5 minutes
-const logFilePath = path.join(__dirname, 'bot-error.log');
-setInterval(() => {
-  fs.truncate(logFilePath, 0, (err) => {
-    if (err) {
-      console.error("Error cleaning log file:", err);
-      logger.error("Error cleaning log file: " + (err.stack || err));
-    } else {
-      console.log("bot-error.log cleaned successfully");
-      logger.info("bot-error.log cleaned successfully");
-    }
-  });
-}, 5 * 60 * 1000); // every 5 minutes
 
 // Global error handlers to prevent the process from crashing
 process.on('uncaughtException', (error) => {
@@ -294,3 +219,48 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.error(`Unhandled Rejection at: ${promise} reason: ${reason}`);
   // Optionally, handle the rejection (restart or log further)
 });
+
+// Setup maintenance tasks
+setupMaintenanceTasks();
+
+// Initialize the queue processor and group processor
+let groupProcessor;
+
+(async () => {
+  try {
+    // Initialize the queue processor
+    await initQueueProcessor(bot);
+    console.log("✅ Queue processor initialized");
+    
+    // Initialize the group processor
+    console.log("🔄 Initializing group processor...");
+    const groupProcessor = new GroupProcessor(bot);
+    await groupProcessor.initialize();
+    
+    // Store in global for access from commands
+    global.groupProcessor = groupProcessor;
+    
+    if (groupProcessor.groupInfo) {
+      console.log(`✅ Group processor initialized for "${groupProcessor.groupInfo.title}"`);
+      
+      // Process any pending messages in the group
+      console.log("🔄 Checking for unprocessed messages in group...");
+      const processedCount = await groupProcessor.processUnprocessedMessages();
+      
+      if (processedCount > 0) {
+        console.log(`✅ Processing ${processedCount} links from group`);
+      } else {
+        console.log("✅ No pending links in group");
+      }
+    } else {
+      console.warn("⚠️ Group processor initialization failed. To use the group feature:");
+      console.warn("1. Create a Telegram group for collecting links");
+      console.warn("2. Add this bot to the group");
+      console.warn("3. Run /register command in that group");
+    }
+  } catch (error) {
+    console.error("❌ Initialization error:", error.message);
+  }
+})();
+
+console.log("✅ Bot initialization complete");

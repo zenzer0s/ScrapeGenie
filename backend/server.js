@@ -7,6 +7,12 @@ const fs = require('fs');
 const { exec } = require('child_process');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+const { createBullBoard } = require('@bull-board/api');
+const { BullAdapter } = require('@bull-board/api/bullAdapter');
+const { ExpressAdapter } = require('@bull-board/express');
+const Queue = require('bull');
+const { setupQueueDashboard } = require('./services/queueDashboard');
+
 // Ensure RAM disk directory exists
 const INSTAGRAM_TMP_DIR = "/dev/shm/instagram_tmp";
 
@@ -79,6 +85,46 @@ app.use(express.static(publicDir));
 app.get("/", (req, res) => {
     res.send("ScrapeGenie API is running...");
 });
+
+// Create queue reference for monitoring
+const linkQueue = new Queue('link-processing', {
+  redis: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+  }
+});
+
+// Set up Bull Board
+const serverAdapter = new ExpressAdapter();
+createBullBoard({
+  queues: [new BullAdapter(linkQueue)],
+  serverAdapter
+});
+
+// Add to your Express app - make sure this is protected in production
+const basicAuth = (req, res, next) => {
+  // Simple basic auth for demonstration
+  // In production, use a more secure authentication method
+  const auth = req.headers.authorization;
+  
+  if (!auth || auth !== 'Basic YWRtaW46YWRtaW4=') { // admin:admin in Base64
+    res.set('WWW-Authenticate', 'Basic realm="Bull Dashboard"');
+    return res.status(401).send('Authentication required');
+  }
+  
+  next();
+};
+
+// Apply basic auth middleware to the bull board routes
+app.use('/admin/queues', basicAuth, serverAdapter.getRouter());
+
+(async () => {
+  try {
+    await setupQueueDashboard(app);
+  } catch (error) {
+    console.error(`Failed to setup queue dashboard: ${error.message}`);
+  }
+})();
 
 app.listen(PORT, () => {
     console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);

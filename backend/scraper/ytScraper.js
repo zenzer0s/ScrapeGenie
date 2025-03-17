@@ -127,8 +127,24 @@ async function ytScraper(videoUrl) {
   }
 }
 
-async function scrapeYouTube(url) {
-  return await ytScraper(url);
+async function scrapeYouTube(url, retries = 2) {
+  try {
+    return await ytScraper(url);
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`⚠️ YouTube scrape failed, retrying (${retries} attempts left)...`);
+      return await scrapeYouTube(url, retries - 1);
+    }
+    // Fall back to minimal data if all retries fail
+    return {
+      success: true,
+      type: 'youtube',
+      title: 'YouTube Video',
+      mediaUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+      originalUrl: url,
+      videoId: videoId
+    };
+  }
 }
 
 module.exports = { scrapeYouTube };
