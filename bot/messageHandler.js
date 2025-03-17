@@ -7,6 +7,7 @@ const { addLinkToQueue, getQueueStats } = require('./services/queueService');
 const { routeContent } = require('./handlers/contentRouter');
 const { extractUrls } = require('./utils/urlUtils');
 const { createBatch, submitBatch } = require('./batch/batchProcessor');
+const stepLogger = require('./utils/stepLogger');
 
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, '../downloads');
 
@@ -114,9 +115,27 @@ async function handleQueueCommand(bot, msg) {
  * Main message handler
  * @param {TelegramBot} bot - The Telegram bot instance
  * @param {object} msg - Telegram message object
+ * @param {object} groupProcessor - Group message processor
  * @returns {Promise<void>}
  */
-async function handleMessage(bot, msg) {
+async function handleMessage(bot, msg, groupProcessor) {
+  // Check if this is a forwarded message and we have a pending collection
+  if (msg.forward_date && global.pendingCollections && global.pendingCollections[msg.from.id]) {
+    const collection = global.pendingCollections[msg.from.id];
+    
+    // Add the message text to the collection
+    if (msg.text) {
+      collection.messages.push(msg.text);
+      
+      // Send a brief acknowledgment
+      await bot.sendMessage(
+        msg.chat.id,
+        `📌 URL message collected (${collection.messages.length} total)`
+      );
+    }
+    return;
+  }
+
   const urls = extractUrls(msg.text || '');
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -126,9 +145,26 @@ async function handleMessage(bot, msg) {
     return;
   }
 
+  stepLogger.info('MESSAGE_RECEIVED', { 
+    chatId, 
+    urlCount: urls.length 
+  });
+  
   try {
-    // Multiple URLs - use batch processor
+    // Check if this message is in our tracked group
+    if (groupProcessor && groupProcessor.isGroupChat(chatId)) {
+      // Let the group processor handle it
+      await groupProcessor.handleGroupMessage(msg);
+      return;
+    }
+    
+    // Multiple URLs - use batch processor immediately
     if (urls.length > 1) {
+      stepLogger.info('MULTIPLE_URLS_DETECTED', {
+        chatId,
+        urlCount: urls.length
+      });
+      
       await bot.sendMessage(chatId, `🔍 Found ${urls.length} links in your message. Processing as a batch...`);
       
       // Create and submit batch
@@ -137,8 +173,12 @@ async function handleMessage(bot, msg) {
       return;
     }
     
-    // Single URL - process normally
+    // Single URL - process as usual
     const url = urls[0];
+    stepLogger.info('SINGLE_URL_DETECTED', {
+      chatId,
+      url
+    });
     
     // Send processing message
     const processingMsg = await bot.sendMessage(chatId, "⏳ Processing your URL...");
@@ -151,48 +191,25 @@ async function handleMessage(bot, msg) {
     const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 1);
     
     if (shouldQueue) {
+      // Add to queue
+      await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
+    } else {
+      // Process directly
       try {
-        // Update message to indicate queueing
+        const data = await callScrapeApi(url, userId);
+        await bot.deleteMessage(chatId, processingMsg.message_id);
+        await routeContent(bot, chatId, url, data);
+      } catch (error) {
         await bot.editMessageText(
-          "🔍 Adding your link to the processing queue...", 
+          `❌ Error: ${error.message}`,
           { chat_id: chatId, message_id: processingMsg.message_id }
         );
-        
-        // Add to queue
-        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
-        
-        // Inform about queue position
-        const updatedStats = await getQueueStats();
-        await bot.sendMessage(
-          chatId, 
-          `📊 Your link is #${updatedStats.waiting} in queue and will be processed soon.`
-        );
-        return;
-      } catch (err) {
-        console.log("Queue error, falling back to direct processing:", err.message);
       }
     }
-    
-    // Direct processing
-    try {
-      await bot.editMessageText(
-        "⚙️ Processing your link...", 
-        { chat_id: chatId, message_id: processingMsg.message_id }
-      );
-      
-      const data = await callScrapeApi(url, userId);
-      await bot.deleteMessage(chatId, processingMsg.message_id);
-      await routeContent(bot, chatId, url, data);
-      
-    } catch (error) {
-      console.error("Processing error:", error.message);
-      await bot.editMessageText(
-        `❌ Error: ${error.message}`,
-        { chat_id: chatId, message_id: processingMsg.message_id }
-      );
-    }
   } catch (error) {
-    console.error(`Critical error: ${error.message}`);
+    stepLogger.error('MESSAGE_HANDLER_ERROR', { 
+      error: error.message 
+    });
     await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
   }
 }
