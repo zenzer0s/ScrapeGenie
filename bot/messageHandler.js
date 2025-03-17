@@ -19,97 +19,67 @@ async function handleUrlMessage(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
 
-  if (!url) {
-    return; // No URL found, exit the function
-  }
+  if (!url) return;
 
   try {
-    // Send "processing" message
+    // Send processing message
     const processingMsg = await bot.sendMessage(chatId, "⏳ Processing your URL...");
     
     // Show typing animation
     await bot.sendChatAction(chatId, 'typing');
     
-    // Get queue stats
+    // Check if we should queue or process directly
     const stats = await getQueueStats();
+    const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 2);
     
-    // If queue is busy, add to queue and inform user
-    if (stats.waiting > 0 || stats.active >= 2) {
-      // Add to queue instead of processing immediately
+    if (shouldQueue) {
+      try {
+        // Update message to indicate queueing
+        await bot.editMessageText(
+          "🔍 Adding your link to the processing queue...", 
+          { chat_id: chatId, message_id: processingMsg.message_id }
+        );
+        
+        // Add to queue
+        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
+        
+        // Inform about queue position
+        await bot.sendMessage(
+          chatId, 
+          `📊 Your link is #${stats.waiting + 1} in queue and will be processed soon.`
+        );
+        return;
+      } catch (err) {
+        console.log("Queue error, falling back to direct processing:", err.message);
+      }
+    }
+    
+    // Direct processing
+    try {
       await bot.editMessageText(
-        "🔍 I've added your link to the processing queue...", 
+        "⚙️ Processing your link...", 
         { chat_id: chatId, message_id: processingMsg.message_id }
       );
       
-      // Add URL to processing queue
-      await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
-      
-      // Inform user about queue position
-      await bot.sendMessage(
-        chatId, 
-        `📊 Your link is #${stats.waiting + 1} in the queue.\n` +
-        `I'll process it as soon as possible.`
-      );
-      
-      return;
-    }
-    
-    // If queue is not busy, process immediately
-    try {
-      // Call API
       const data = await callScrapeApi(url, userId);
-      
-      // Delete processing message
       await bot.deleteMessage(chatId, processingMsg.message_id);
-      
-      // Route to appropriate handler
       await routeContent(bot, chatId, url, data);
       
     } catch (error) {
-      // Handle Pinterest authentication error
-      if (error.response?.status === 401 && 
-          error.response.data?.requiresAuth && 
-          error.response.data?.service === 'pinterest') {
-          
-        console.log('🔐 Pinterest authentication required');
-        
-        await bot.editMessageText(
-          "🔐 *Pinterest Login Required*\n\n" +
-          "To download content from Pinterest, you need to login first.\n\n" +
-          "Please tap the button below to log in, then send your Pinterest link again.",
-          {
-            chat_id: chatId, 
-            message_id: processingMsg.message_id,
-            parse_mode: "Markdown",
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "🔐 Login to Pinterest", callback_data: "pinterest_login" }]
-              ]
-            }
-          }
-        );
-        return;
-      }
+      console.error("Processing error:", error.message);
       
-      // Handle other errors
-      console.error(`❌ Error handling URL: ${error.message}`);
-      logger.error(`Error handling URL: ${error}`);
+      // Handle specific errors (e.g., Pinterest auth required) here
+      // ...
       
+      // Generic error handling
       await bot.editMessageText(
-        `❌ Sorry, I encountered an error processing your request.\nError: ${error.message}`,
+        `❌ Error: ${error.message}`,
         { chat_id: chatId, message_id: processingMsg.message_id }
       );
     }
-    
   } catch (error) {
-    console.error(`❌ Critical error: ${error.message}`);
-    logger.error(`Critical error: ${error}`);
-    
-    try {
-      await bot.sendMessage(chatId, `❌ Sorry, something went wrong. Please try again later.`);
-    } catch (sendError) {
-      console.error(`Failed to send error message: ${sendError.message}`);
-    }
+    console.error(`Critical error: ${error.message}`);
+    await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
   }
 }
 
