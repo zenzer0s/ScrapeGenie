@@ -19,43 +19,70 @@ function logQueue(message) {
   queueLogStream.write(logEntry);
 }
 
-// Create the processing queue
-const linkQueue = new Queue('link-processing', {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379,
-  },
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 5000
-    },
-    removeOnComplete: 100,
-    removeOnFail: 200
+// Queue setup
+let linkQueue;
+let queueEnabled = false;
+
+// Initialize the queue
+async function initQueue() {
+  try {
+    // Create Bull queue with Redis connection
+    linkQueue = new Queue('link-processing', {
+      redis: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379
+      },
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 5000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 200
+      }
+    });
+    
+    // Set up queue event handlers
+    linkQueue.on('completed', job => {
+      logQueue(`✅ Job completed: ${job.id}, URL: ${job.data.url}`);
+    });
+    
+    linkQueue.on('failed', (job, err) => {
+      logQueue(`❌ Job failed: ${job.id}, URL: ${job.data.url}, Error: ${err.message}`);
+    });
+    
+    linkQueue.on('stalled', job => {
+      logQueue(`⚠️ Job stalled: ${job.id}, URL: ${job.data.url}`);
+    });
+    
+    linkQueue.on('error', error => {
+      logQueue(`🔴 Queue error: ${error.message}`);
+      queueEnabled = false;
+    });
+    
+    // Test connection
+    await linkQueue.getJobCounts();
+    queueEnabled = true;
+    logQueue('✅ Queue initialized successfully');
+    return true;
+  } catch (error) {
+    logQueue(`❌ Queue initialization failed: ${error.message}`);
+    queueEnabled = false;
+    return false;
   }
-});
+}
 
-// Set up event handlers for the queue
-linkQueue.on('completed', job => {
-  logQueue(`✅ Job completed: ${job.id}, URL: ${job.data.url}`);
-});
+// Initialize queue when module is loaded
+initQueue();
 
-linkQueue.on('failed', (job, err) => {
-  logQueue(`❌ Job failed: ${job.id}, URL: ${job.data.url}, Error: ${err.message}`);
-});
-
-linkQueue.on('stalled', job => {
-  logQueue(`⚠️ Job stalled: ${job.id}, URL: ${job.data.url}`);
-});
-
-linkQueue.on('error', error => {
-  logQueue(`🔴 Queue error: ${error.message}`);
-});
-
-// Function to add a job to the queue
+// Add a job to the queue
 async function addLinkToQueue(url, chatId, userId, messageId) {
   try {
+    if (!queueEnabled || !linkQueue) {
+      throw new Error('Queue system disabled');
+    }
+    
     const job = await linkQueue.add({
       url,
       chatId,
@@ -75,11 +102,18 @@ async function addLinkToQueue(url, chatId, userId, messageId) {
 // Get queue statistics
 async function getQueueStats() {
   try {
+    if (!queueEnabled || !linkQueue) {
+      return { 
+        waiting: 0, active: 0, completed: 0, failed: 0, total: 0, 
+        status: 'disabled'
+      };
+    }
+    
     const [waiting, active, completed, failed] = await Promise.all([
-      linkQueue.getWaitingCount(),
-      linkQueue.getActiveCount(),
-      linkQueue.getCompletedCount(),
-      linkQueue.getFailedCount()
+      linkQueue.getWaitingCount().catch(() => 0),
+      linkQueue.getActiveCount().catch(() => 0),
+      linkQueue.getCompletedCount().catch(() => 0),
+      linkQueue.getFailedCount().catch(() => 0)
     ]);
     
     return {
@@ -87,16 +121,24 @@ async function getQueueStats() {
       active,
       completed,
       failed,
-      total: waiting + active
+      total: waiting + active,
+      status: 'enabled'
     };
   } catch (error) {
     logQueue(`❌ Failed to get queue stats: ${error.message}`);
-    return { error: error.message };
+    return { error: error.message, status: 'error' };
   }
+}
+
+// Function to check if queue is enabled
+function isQueueEnabled() {
+  return queueEnabled;
 }
 
 module.exports = {
   linkQueue,
   addLinkToQueue,
-  getQueueStats
+  getQueueStats,
+  isQueueEnabled,
+  initQueue
 };
