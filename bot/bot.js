@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const lockFile = path.join(__dirname, '../.bot.lock');
+const statusNotifier = require('./services/statusNotifier');
 
 // Check if another instance is running
 function checkForMultipleInstances() {
@@ -33,9 +34,46 @@ function checkForMultipleInstances() {
       }
     });
     
-    // Also handle SIGINT and SIGTERM
-    process.on('SIGINT', () => process.exit(0));
-    process.on('SIGTERM', () => process.exit(0));
+    // Also handle SIGINT and SIGTERM with notifications
+    process.on('SIGINT', async () => {
+      logger.warn("Received SIGINT signal");
+      try {
+        await statusNotifier.notifyOffline(bot, 'Manual shutdown (Ctrl+C)');
+        
+        // Give time for notification to send
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(lockFile);
+          } catch {
+            // Ignore errors during cleanup
+          }
+          process.exit(0);
+        }, 2000);
+      } catch (error) {
+        logger.error(`Error during shutdown: ${error.message}`);
+        process.exit(1);
+      }
+    });
+    
+    process.on('SIGTERM', async () => {
+      logger.warn("Received SIGTERM signal");
+      try {
+        await statusNotifier.notifyOffline(bot, 'Scheduled shutdown');
+        
+        // Give time for notification to send
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(lockFile);
+          } catch {
+            // Ignore errors during cleanup
+          }
+          process.exit(0);
+        }, 2000);
+      } catch (error) {
+        logger.error(`Error during shutdown: ${error.message}`);
+        process.exit(1);
+      }
+    });
     
   } catch (error) {
     console.error("Error checking for multiple instances:", error);
@@ -84,7 +122,9 @@ const {
   usageCommand,
   pinterestLoginCommand,
   pinterestLogoutCommand,
-  pinterestStatusCommand
+  pinterestStatusCommand,
+  addAdminCommand,
+  removeAdminCommand
 } = require('./commands');
 const { handleMessage } = require('./messageHandler');
 const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/callbackHandler');
@@ -242,6 +282,27 @@ bot.onText(/\/collect/, async (msg) => {
   }
 });
 
+// Admin commands for status notifications
+bot.onText(/\/addadmin/, async (msg) => {
+  try {
+    const { sentMessage, userMessageId } = await addAdminCommand(bot, msg);
+    deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+    deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
+  } catch (error) {
+    logger.error(`Error in addadmin command: ${error.message}`);
+  }
+});
+
+bot.onText(/\/removeadmin/, async (msg) => {
+  try {
+    const { sentMessage, userMessageId } = await removeAdminCommand(bot, msg);
+    deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+    deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
+  } catch (error) {
+    logger.error(`Error in removeadmin command: ${error.message}`);
+  }
+});
+
 // Make groupProcessor globally accessible
 global.groupProcessor = null;
 
@@ -374,3 +435,12 @@ async function initGroupProcessor() {
     logger.error(`Group initialization failed: ${error.message}`);
   }
 }
+
+// Send online notification after bot is fully initialized
+(async () => {
+  try {
+    await statusNotifier.notifyOnline(bot);
+  } catch (error) {
+    logger.error(`Error sending online notification: ${error.message}`);
+  }
+})();
