@@ -2,6 +2,48 @@ const { handleInstagram } = require('./instagramHandler');
 const { handleYoutube } = require('./youtubeHandler');
 const { handlePinterest } = require('./pinterestHandler');
 const { handleGenericWebsite } = require('./genericHandler');
+const stepLogger = require('../utils/stepLogger');
+
+// Content type patterns
+const CONTENT_PATTERNS = {
+  instagram: [
+    /instagram\.com/i,
+    /instagr\.am/i,
+    /ig\./i,
+    /reels?\//i
+  ],
+  pinterest: [
+    /pinterest\.com/i,
+    /pin\.it/i,
+  ],
+  youtube: [
+    /youtube\.com/i, 
+    /youtu\.be/i,
+    /shorts\//i
+  ]
+};
+
+/**
+ * Determine content type from URL
+ * @param {string} url - URL to analyze
+ * @returns {string} Content type
+ */
+function detectContentType(url, dataType = null) {
+  // First check data.type if provided by API
+  if (dataType) {
+    return dataType;
+  }
+  
+  // Then check URL patterns
+  for (const [contentType, patterns] of Object.entries(CONTENT_PATTERNS)) {
+    if (patterns.some(pattern => pattern.test(url))) {
+      return contentType;
+    }
+  }
+  
+  // Default to generic
+  return 'generic';
+}
 
 /**
  * Routes content to the appropriate handler based on URL/content type
@@ -13,23 +55,56 @@ const { handleGenericWebsite } = require('./genericHandler');
  */
 async function routeContent(bot, chatId, url, data) {
   try {
-    // Check what type of content we're dealing with
-    const isInstagramUrl = url.includes('instagram.com') || url.includes('instagr.am');
-    const isPinterestUrl = url.includes('pinterest.com') || url.includes('pin.it');
-    const isYoutubeUrl = url.includes('youtube.com') || url.includes('youtu.be');
+    // Detect content type
+    const contentType = detectContentType(url, data.type);
     
-    if (isInstagramUrl) {
-      await handleInstagram(bot, chatId, url, data);
-    } else if (isYoutubeUrl || data.type === 'youtube') {
-      await handleYoutube(bot, chatId, url, data);
-    } else if (isPinterestUrl || data.type === 'pinterest') {
-      await handlePinterest(bot, chatId, url, data);
-    } else {
-      await handleGenericWebsite(bot, chatId, url, data);
+    stepLogger.info('CONTENT_ROUTING', { 
+      chatId, 
+      contentType, 
+      url: url.substring(0, 50) // Log truncated URL
+    });
+    
+    // Route to appropriate handler
+    switch (contentType) {
+      case 'instagram':
+        await handleInstagram(bot, chatId, url, data);
+        break;
+      case 'youtube':
+        await handleYoutube(bot, chatId, url, data);
+        break;
+      case 'pinterest':
+        await handlePinterest(bot, chatId, url, data);
+        break;
+      default:
+        await handleGenericWebsite(bot, chatId, url, data);
+        break;
     }
+    
+    // Log successful routing
+    stepLogger.success('CONTENT_DELIVERED', { 
+      chatId, 
+      contentType
+    });
   } catch (error) {
-    console.error(`❌ Content routing error: ${error.message}`);
-    throw error;
+    stepLogger.error('CONTENT_ROUTING_ERROR', { 
+      chatId, 
+      url: url.substring(0, 50),
+      error: error.message
+    });
+    
+    // Try fallback to generic handler if a specialized one failed
+    try {
+      // Only attempt fallback if we weren't already using generic
+      if (detectContentType(url) !== 'generic') {
+        stepLogger.info('CONTENT_ROUTING_FALLBACK', { chatId, url: url.substring(0, 50) });
+        await handleGenericWebsite(bot, chatId, url, data);
+      } else {
+        throw error; // Re-throw if we were already using generic
+      }
+    } catch (fallbackError) {
+      // If fallback also fails, throw the original error
+      throw error;
+    }
   }
 }
 
