@@ -1,3 +1,50 @@
+// At the beginning of your file:
+
+const fs = require('fs');
+const path = require('path');
+const lockFile = path.join(__dirname, '../.bot.lock');
+
+// Check if another instance is running
+function checkForMultipleInstances() {
+  try {
+    // If lock file exists and is recent (less than 10 seconds old)
+    if (fs.existsSync(lockFile)) {
+      const stats = fs.statSync(lockFile);
+      const fileAge = Date.now() - stats.mtimeMs;
+      
+      if (fileAge < 10000) { // 10 seconds
+        console.log("⚠️ Another bot instance appears to be running!");
+        console.log("If this is incorrect, delete the lock file: " + lockFile);
+        process.exit(1);
+      } else {
+        console.log("⚠️ Stale lock file found. Overwriting.");
+      }
+    }
+    
+    // Create or update lock file
+    fs.writeFileSync(lockFile, String(process.pid));
+    
+    // Remove lock file when process exits
+    process.on('exit', () => {
+      try {
+        fs.unlinkSync(lockFile);
+      } catch (err) {
+        // Ignore errors during cleanup
+      }
+    });
+    
+    // Also handle SIGINT and SIGTERM
+    process.on('SIGINT', () => process.exit(0));
+    process.on('SIGTERM', () => process.exit(0));
+    
+  } catch (error) {
+    console.error("Error checking for multiple instances:", error);
+  }
+}
+
+// Call this before any other initialization
+checkForMultipleInstances();
+
 // At the beginning of your file, before other initializations:
 
 // Separate console logs from step logs
@@ -13,12 +60,21 @@ console.log = function(...args) {
   }
 };
 
+// Track initialization to prevent duplicates
+const initialized = {
+  queue: false,
+  queueProcessor: false,
+  group: false
+};
+
 // Import configuration and libraries
 const config = require('./config/botConfig');
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const axiosRetry = require('axios-retry').default;
 const express = require('express');
+const logger = require('./utils/consoleLogger');
+const stepLogger = require('./utils/stepLogger');
 
 // Import commands and handlers
 const { 
@@ -35,7 +91,6 @@ const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/cal
 const { checkBackendStatus } = require('./utils/statusUtils');
 const { setupMaintenanceTasks } = require('./services/maintenanceService');
 const { initQueueProcessor } = require('./services/queueWorker');
-const logger = require('./logger');
 const queueService = require('./services/queueService');
 const GroupProcessor = require('./group/groupProcessor');
 
@@ -64,9 +119,8 @@ if (config.useWebhook) {
     
     // Set the webhook
     bot.setWebHook(webhookUrl)
-      .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
+      .then(() => logger.success(`Webhook set to ${webhookUrl}`))
       .catch(err => {
-        console.error(`❌ Failed to set webhook: ${err}`);
         logger.error(`Failed to set webhook: ${err}`);
       });
     
@@ -79,20 +133,19 @@ if (config.useWebhook) {
     // If not started via setWebHook, start the Express server
     if (!app.listening) {
       app.listen(config.port, () => {
-        console.log(`🚀 Webhook server running on port ${config.port}`);
+        logger.success(`Webhook server running on port ${config.port}`);
       });
     }
     
-    console.log("🤖 Bot is running in webhook mode...");
+    logger.info("Bot is running in webhook mode...");
   } else {
-    console.error("❌ Public URL not provided for webhook mode");
     logger.error("Public URL not provided for webhook mode");
     process.exit(1);
   }
 } else {
   // Polling mode
   bot = new TelegramBot(config.token, { polling: true });
-  console.log("🚀 Bot is running in polling mode...");
+  logger.info("Bot is running in polling mode...");
 }
 
 // Register command handlers
@@ -156,7 +209,7 @@ bot.onText(/\/group/, async (msg) => {
   try {
     await require('./commands/group').process(bot, msg, groupProcessor);
   } catch (error) {
-    console.error('Error handling /group command:', error);
+    logger.error('Error handling /group command:', error);
   }
 });
 
@@ -165,7 +218,7 @@ bot.onText(/\/register/, async (msg) => {
   try {
     await require('./commands/registerGroup')(bot, msg);
   } catch (error) {
-    console.error('Error handling /register command:', error);
+    logger.error('Error handling /register command:', error);
   }
 });
 
@@ -176,7 +229,7 @@ bot.onText(/\/process/, async (msg) => {
   try {
     await require('./commands/process')(bot, msg);
   } catch (error) {
-    console.error('Error handling /process command:', error);
+    logger.error('Error handling /process command:', error);
   }
 });
 
@@ -185,7 +238,7 @@ bot.onText(/\/collect/, async (msg) => {
   try {
     await require('./commands/collect')(bot, msg);
   } catch (error) {
-    console.error('Error handling /collect command:', error);
+    logger.error('Error handling /collect command:', error);
   }
 });
 
@@ -197,7 +250,6 @@ bot.on('message', async (msg) => {
   try {
     await handleMessage(bot, msg, groupProcessor);
   } catch (error) {
-    console.error("Error handling message:", error);
     logger.error(`Error handling message: ${error.message}`);
   }
 });
@@ -209,13 +261,11 @@ bot.on('callback_query', async (callbackQuery) => {
 
 // Global error handlers to prevent the process from crashing
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
   logger.error(`Uncaught Exception: ${error.stack}`);
   // Optionally, restart the bot or perform cleanup
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
   logger.error(`Unhandled Rejection at: ${promise} reason: ${reason}`);
   // Optionally, handle the rejection (restart or log further)
 });
@@ -230,10 +280,10 @@ let groupProcessor;
   try {
     // Initialize the queue processor
     await initQueueProcessor(bot);
-    console.log("✅ Queue processor initialized");
+    logger.success("Queue processor initialized");
     
     // Initialize the group processor
-    console.log("🔄 Initializing group processor...");
+    logger.processing("Initializing group processor...");
     const groupProcessor = new GroupProcessor(bot);
     await groupProcessor.initialize();
     
@@ -241,26 +291,86 @@ let groupProcessor;
     global.groupProcessor = groupProcessor;
     
     if (groupProcessor.groupInfo) {
-      console.log(`✅ Group processor initialized for "${groupProcessor.groupInfo.title}"`);
+      logger.success(`Group processor initialized for "${groupProcessor.groupInfo.title}"`);
       
       // Process any pending messages in the group
-      console.log("🔄 Checking for unprocessed messages in group...");
+      logger.processing("Checking for unprocessed messages in group...");
       const processedCount = await groupProcessor.processUnprocessedMessages();
       
       if (processedCount > 0) {
-        console.log(`✅ Processing ${processedCount} links from group`);
+        logger.success(`Processing ${processedCount} links from group`);
       } else {
-        console.log("✅ No pending links in group");
+        logger.success("No pending links in group");
       }
     } else {
-      console.warn("⚠️ Group processor initialization failed. To use the group feature:");
-      console.warn("1. Create a Telegram group for collecting links");
-      console.warn("2. Add this bot to the group");
-      console.warn("3. Run /register command in that group");
+      logger.warn("Group processor initialization failed. To use the group feature:");
+      logger.warn("1. Create a Telegram group for collecting links");
+      logger.warn("2. Add this bot to the group");
+      logger.warn("3. Run /register command in that group");
     }
   } catch (error) {
-    console.error("❌ Initialization error:", error.message);
+    logger.error(`Initialization error: ${error.message}`);
   }
 })();
 
-console.log("✅ Bot initialization complete");
+logger.success("Bot initialization complete");
+
+// For queue initialization:
+async function initQueue() {
+  if (initialized.queue) {
+    return;
+  }
+  
+  logger.processing("Initializing link processing queue...");
+  
+  try {
+    // Your queue initialization code
+    
+    initialized.queue = true;
+    logger.success("Queue initialized successfully");
+  } catch (error) {
+    logger.error(`Queue initialization failed: ${error.message}`);
+  }
+}
+
+// For queue processor:
+async function initLocalQueueProcessor() {
+  if (initialized.queueProcessor) {
+    return;
+  }
+  
+  logger.processing("Initializing queue processor...");
+  
+  try {
+    // Your queue processor initialization code
+    
+    initialized.queueProcessor = true;
+    logger.success("Queue processor initialized");
+  } catch (error) {
+    logger.error(`Queue processor initialization failed: ${error.message}`);
+  }
+}
+
+// For group processor:
+async function initGroupProcessor() {
+  if (initialized.group) {
+    return;
+  }
+  
+  logger.processing("Initializing group processor...");
+  
+  try {
+    // Your group processor initialization code
+    
+    initialized.group = true;
+    
+    if (groupProcessor.groupInfo) {
+      logger.success(`Group processor initialized for "${groupProcessor.groupInfo.title}"`);
+      // Process pending messages
+    } else {
+      logger.warn("Group processor initialization failed");
+    }
+  } catch (error) {
+    logger.error(`Group initialization failed: ${error.message}`);
+  }
+}
