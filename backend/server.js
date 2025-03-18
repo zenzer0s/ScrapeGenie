@@ -3,7 +3,6 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
-const morgan = require('morgan');
 const scrapeRouter = require('./routes/scrape');
 const instagramRouter = require('./routes/instagram');
 const youtubeRouter = require('./routes/youtube');
@@ -62,9 +61,25 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Set up logging
-const accessLogStream = fs.createWriteStream(path.join(__dirname, 'access.log'), { flags: 'a' });
-app.use(morgan('combined', { stream: accessLogStream }));
+// Simple request logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const log = `${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`;
+    console.log(log);
+    
+    // Optional: Write to log file
+    if (fs.existsSync(path.join(__dirname))) {
+      fs.appendFile(
+        path.join(__dirname, 'access.log'), 
+        log + '\n', 
+        err => { if (err) console.error('Error writing to log:', err); }
+      );
+    }
+  });
+  next();
+});
 
 // API routes
 app.use('/api/scrape', scrapeRouter);
