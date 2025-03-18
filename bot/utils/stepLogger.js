@@ -9,7 +9,7 @@ class StepLogger {
     this.options = {
       logDir: path.join(__dirname, '../../logs'),
       logFile: 'steps.log',
-      consoleOutput: true,
+      consoleOutput: false, // CHANGE THIS TO FALSE
       maxContextValueLength: 100,
       timeZone: 'local', // 'local' or 'utc'
       cleanOnStartup: true, // New option to control log cleanup
@@ -113,10 +113,12 @@ class StepLogger {
     // Write to file
     this.logStream.write(logEntry);
     
-    // Output to console if enabled
+    // Output to console if enabled (with custom formatting)
     if (this.options.consoleOutput) {
       const color = this.colors[level] || this.colors.INFO;
-      console.log(`${color}${logEntry.trim()}${this.colors.RESET}`);
+      
+      // Use a special prefix for step logs to make them identifiable
+      console.log(`${color}[STEP] ${logEntry.trim()}${this.colors.RESET}`);
     }
   }
   
