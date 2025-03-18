@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require('uuid');
-const { addLinkToQueue, getQueueStats } = require('../services/queueService');
 const { callScrapeApi } = require('../services/apiService');
 const { routeContent } = require('../handlers/contentRouter');
 const { truncateUrl } = require('../utils/urlUtils');
@@ -16,37 +15,36 @@ const activeBatches = new Map();
  * @returns {string} Batch ID
  */
 async function createBatch(links, chatId, userId) {
-  stepLogger.info('CREATE_BATCH_START', { 
-    linkCount: links.length, 
-    chatId 
-  });
-  
-  // Create a unique batch ID
   const batchId = uuidv4();
   
-  // Create batch entry
+  // Create batch structure
   const batch = {
     id: batchId,
     chatId,
     userId,
-    links: links.map(url => ({
-      url,
-      status: 'pending', // pending, processing, completed, failed
-      result: null,
-      error: null,
-      processingOrder: 0
-    })),
+    createdAt: new Date(),
     statusMessageId: null,
-    startTime: Date.now(),
-    completedCount: 0,
-    failedCount: 0
+    links: links.map((url, index) => ({
+      url,
+      index,
+      status: 'pending',
+      data: null,
+      error: null
+    })),
+    stats: {
+      total: links.length,
+      pending: links.length,
+      completed: 0,
+      failed: 0
+    }
   };
   
-  // Store in active batches
+  // Store batch
   activeBatches.set(batchId, batch);
   
-  stepLogger.info('CREATE_BATCH_SUCCESS', { 
+  stepLogger.info('BATCH_CREATED', { 
     batchId, 
+    chatId, 
     linkCount: links.length 
   });
   
@@ -54,7 +52,7 @@ async function createBatch(links, chatId, userId) {
 }
 
 /**
- * Submit a batch to the processing queue
+ * Submit a batch for processing
  * @param {string} batchId - The batch ID
  * @param {Object} bot - Telegram bot instance
  */
@@ -81,44 +79,11 @@ async function submitBatch(batchId, bot) {
       statusMessageId: statusMessage.message_id 
     });
     
-    // Check queue status
-    const stats = await getQueueStats();
-    const useQueue = stats.status === 'enabled';
-    
-    // Process links in order
-    for (let i = 0; i < batch.links.length; i++) {
-      const linkObj = batch.links[i];
-      linkObj.processingOrder = i + 1;
-      
-      stepLogger.info('BATCH_ITEM_SUBMIT', { 
-        batchId, 
-        index: i, 
-        url: linkObj.url 
-      });
-      
-      if (useQueue) {
-        // Add to queue with custom data
-        await addLinkToQueue(
-          linkObj.url,
-          batch.chatId,
-          batch.userId,
-          {
-            batchId,
-            index: i,
-            updateStatus: true
-          }
-        );
-      } else {
-        // Process directly in order
-        processBatchItem(bot, batchId, i);
-      }
-    }
-    
-    // Update status message
-    updateStatusMessage(bot, batch);
+    // Process links directly, one by one
+    processBatchItems(bot, batchId);
     
     stepLogger.info('SUBMIT_BATCH_COMPLETE', { batchId });
-    
+    return true;
   } catch (error) {
     stepLogger.error('SUBMIT_BATCH_FAILED', { 
       batchId, 
@@ -133,311 +98,187 @@ async function submitBatch(batchId, bot) {
     
     // Clean up
     activeBatches.delete(batchId);
+    throw error;
   }
 }
 
 /**
- * Process a single item in a batch
+ * Process all batch items sequentially
  * @param {Object} bot - Telegram bot instance
- * @param {string} batchId - Batch ID
- * @param {number} index - Index of the link in the batch
+ * @param {string} batchId - The batch ID
+ */
+async function processBatchItems(bot, batchId) {
+  const batch = activeBatches.get(batchId);
+  if (!batch) return;
+  
+  for (let i = 0; i < batch.links.length; i++) {
+    try {
+      await processBatchItem(bot, batchId, i);
+      // Small delay between items to avoid rate limiting
+      if (i < batch.links.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      stepLogger.error('BATCH_ITEM_PROCESS_FAILED', {
+        batchId,
+        index: i,
+        error: error.message
+      });
+      // Continue with next item even if this one failed
+    }
+  }
+  
+  // Final status update
+  updateStatusMessage(bot, batch);
+  
+  // Keep batch info for 1 hour then delete
+  setTimeout(() => {
+    activeBatches.delete(batchId);
+    stepLogger.info('BATCH_CLEANUP', { batchId });
+  }, 60 * 60 * 1000);
+}
+
+/**
+ * Process a single batch item
+ * @param {Object} bot - Telegram bot instance
+ * @param {string} batchId - The batch ID
+ * @param {number} index - Item index
  */
 async function processBatchItem(bot, batchId, index) {
-  stepLogger.info('PROCESS_BATCH_ITEM_START', { 
-    batchId, 
-    index 
-  });
-  
   const batch = activeBatches.get(batchId);
-  
-  if (!batch || index >= batch.links.length) {
-    stepLogger.warn('PROCESS_BATCH_ITEM_INVALID', { 
-      batchId, 
-      index,
-      batchExists: !!batch
-    });
-    return;
-  }
+  if (!batch) return;
   
   const linkObj = batch.links[index];
+  linkObj.status = 'processing';
   
-  try {
-    // Update status to processing
-    linkObj.status = 'processing';
-    updateStatusMessage(bot, batch);
-    
-    // Call API
-    const data = await callScrapeApi(linkObj.url, batch.userId);
-    
-    // Store result
-    linkObj.status = 'completed';
-    linkObj.result = data;
-    batch.completedCount++;
-    
-    // Update status message
-    updateStatusMessage(bot, batch);
-    
-    stepLogger.info('PROCESS_BATCH_ITEM_SUCCESS', { 
-      batchId, 
-      index,
-      url: linkObj.url
-    });
-    
-    // Check if batch is complete
-    if (batch.completedCount + batch.failedCount === batch.links.length) {
-      await finalizeBatch(bot, batchId);
-    }
-    
-  } catch (error) {
-    stepLogger.error('PROCESS_BATCH_ITEM_FAILED', { 
-      batchId, 
-      index,
-      url: linkObj.url,
-      error: error.message
-    });
-    
-    // Update status to failed
-    linkObj.status = 'failed';
-    linkObj.error = error.message;
-    batch.failedCount++;
-    
-    // Update status message
-    updateStatusMessage(bot, batch);
-    
-    // Check if batch is complete
-    if (batch.completedCount + batch.failedCount === batch.links.length) {
-      await finalizeBatch(bot, batchId);
-    }
-  }
-}
-
-/**
- * Update the status message for a batch
- * @param {Object} bot - Telegram bot instance
- * @param {Object} batch - Batch object
- */
-async function updateStatusMessage(bot, batch) {
-  if (!batch.statusMessageId) return;
-  
-  try {
-    await bot.editMessageText(
-      generateStatusMessage(batch),
-      {
-        chat_id: batch.chatId,
-        message_id: batch.statusMessageId,
-        parse_mode: 'HTML'
-      }
-    );
-    
-    stepLogger.info('UPDATE_STATUS_MESSAGE', { 
-      batchId: batch.id,
-      completed: batch.completedCount,
-      failed: batch.failedCount,
-      total: batch.links.length
-    });
-  } catch (error) {
-    stepLogger.error('UPDATE_STATUS_MESSAGE_FAILED', { 
-      batchId: batch.id,
-      error: error.message
-    });
-  }
-}
-
-/**
- * Generate a status message for the batch
- * @param {Object} batch - Batch object
- * @returns {string} Formatted status message
- */
-function generateStatusMessage(batch) {
-  const total = batch.links.length;
-  const completed = batch.completedCount;
-  const failed = batch.failedCount;
-  const pending = total - completed - failed;
-  const percentComplete = Math.floor(((completed + failed) / total) * 100);
-  
-  // Status icons for quick reference
-  const statusIcon = {
-    'pending': '⏳',
-    'processing': '🔄',
-    'completed': '✅',
-    'failed': '❌'
-  };
-  
-  // Progress bar generation
-  const progress = Math.floor(((completed + failed) / total) * 10);
-  const progressBar = '▓'.repeat(progress) + '░'.repeat(10 - progress);
-  
-  // Build the message sections
-  let message = `<b>Processing ${total} links</b>\n\n`;
-  message += `${progressBar} ${percentComplete}%\n\n`;
-  
-  // Add counts
-  message += `✅ Completed: ${completed}\n`;
-  message += `❌ Failed: ${failed}\n`;
-  message += `⏳ Pending: ${pending}\n\n`;
-  
-  // Add link details (limit to 20 if there are too many)
-  const displayLimit = batch.links.length > 20 ? 20 : batch.links.length;
-  
-  for (let i = 0; i < displayLimit; i++) {
-    const link = batch.links[i];
-    message += `${statusIcon[link.status]} ${i+1}. ${truncateUrl(link.url)}\n`;
-  }
-  
-  // Show message if some links are not displayed
-  if (batch.links.length > displayLimit) {
-    message += `\n...and ${batch.links.length - displayLimit} more links\n`;
-  }
-  
-  // Add elapsed time
-  const elapsed = Math.floor((Date.now() - batch.startTime) / 1000);
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
-  message += `\n⏱️ Elapsed: ${minutes}m ${seconds}s`;
-  
-  return message;
-}
-
-/**
- * Finalize a batch and send all results
- * @param {Object} bot - Telegram bot instance
- * @param {string} batchId - Batch ID
- */
-async function finalizeBatch(bot, batchId) {
-  stepLogger.info('FINALIZE_BATCH_START', { batchId });
-  
-  const batch = activeBatches.get(batchId);
-  
-  if (!batch) {
-    stepLogger.warn('FINALIZE_BATCH_NOT_FOUND', { batchId });
-    return;
-  }
-  
-  try {
-    // Update final status
-    await updateStatusMessage(bot, batch);
-    
-    // Calculate success rate
-    const successRate = Math.round((batch.completedCount / batch.links.length) * 100);
-    
-    // Send completion message
-    await bot.sendMessage(
-      batch.chatId,
-      `✅ Batch processing complete! ${batch.completedCount}/${batch.links.length} links processed successfully (${successRate}%)`
-    );
-    
-    // Wait a moment for UI clarity
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Send results for each successful link
-    let resultsSent = 0;
-    for (const link of batch.links) {
-      if (link.status === 'completed' && link.result) {
-        await routeContent(bot, batch.chatId, link.url, link.result);
-        resultsSent++;
-        
-        // Add a small delay between messages for better readability
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } else if (link.status === 'failed') {
-        // Group together multiple failures to avoid spamming
-        // We'll report them in a final summary
-      }
-    }
-    
-    // Send failure summary if needed
-    if (batch.failedCount > 0) {
-      let failureMessage = `⚠️ ${batch.failedCount} link(s) failed to process:\n\n`;
-      
-      batch.links.filter(l => l.status === 'failed').forEach((link, i) => {
-        if (i < 5) { // Limit to first 5 failures to avoid message length issues
-          failureMessage += `${i+1}. ${truncateUrl(link.url)}: ${link.error || 'Unknown error'}\n`;
-        }
-      });
-      
-      if (batch.failedCount > 5) {
-        failureMessage += `\n...and ${batch.failedCount - 5} more failures.`;
-      }
-      
-      await bot.sendMessage(batch.chatId, failureMessage);
-    }
-    
-    stepLogger.info('FINALIZE_BATCH_COMPLETE', { 
-      batchId, 
-      completed: batch.completedCount,
-      failed: batch.failedCount,
-      resultsSent
-    });
-    
-    // Clean up
-    activeBatches.delete(batchId);
-    
-  } catch (error) {
-    stepLogger.error('FINALIZE_BATCH_FAILED', { 
-      batchId, 
-      error: error.message 
-    });
-    
-    // Try to notify user
-    await bot.sendMessage(
-      batch.chatId,
-      `❌ Error finalizing batch: ${error.message}`
-    );
-    
-    // Clean up anyway
-    activeBatches.delete(batchId);
-  }
-}
-
-/**
- * Update batch item status from queue processor
- * @param {Object} bot - Telegram bot instance
- * @param {string} batchId - Batch ID
- * @param {number} index - Index of the link in the batch
- * @param {Object} result - API result or error
- * @param {boolean} success - Whether processing was successful
- */
-async function updateBatchItemStatus(bot, batchId, index, result, success) {
-  stepLogger.info('UPDATE_BATCH_ITEM_STATUS', { 
+  stepLogger.info('PROCESS_BATCH_ITEM_START', { 
     batchId, 
-    index,
-    success 
+    index, 
+    url: linkObj.url.substring(0, 50) 
   });
   
-  const batch = activeBatches.get(batchId);
+  updateStatusMessage(bot, batch);
   
-  if (!batch || index >= batch.links.length) {
-    stepLogger.warn('UPDATE_BATCH_ITEM_STATUS_INVALID', { 
-      batchId, 
+  try {
+    const data = await callScrapeApi(linkObj.url, batch.userId);
+    
+    // Update batch status
+    linkObj.status = 'completed';
+    linkObj.data = data;
+    batch.stats.pending--;
+    batch.stats.completed++;
+    
+    updateStatusMessage(bot, batch);
+    
+    stepLogger.success('PROCESS_BATCH_ITEM_SUCCESS', {
+      batchId,
       index,
-      batchExists: !!batch
+      url: linkObj.url.substring(0, 50)
     });
-    return;
+    
+    // Route content
+    await routeContent(bot, batch.chatId, linkObj.url, data);
+  } catch (error) {
+    linkObj.status = 'failed';
+    linkObj.error = error.message;
+    batch.stats.pending--;
+    batch.stats.failed++;
+    
+    stepLogger.error('PROCESS_BATCH_ITEM_FAILED', {
+      batchId,
+      index,
+      url: linkObj.url.substring(0, 50),
+      error: error.message
+    });
+    
+    updateStatusMessage(bot, batch);
   }
+}
+
+/**
+ * Update batch item status (compatibility function)
+ * @param {Object} bot - Telegram bot instance
+ * @param {string} batchId - The batch ID
+ * @param {number} index - Item index
+ * @param {Object} dataOrError - API response data or error
+ * @param {boolean} success - Whether the operation was successful
+ */
+async function updateBatchItemStatus(bot, batchId, index, dataOrError, success) {
+  const batch = activeBatches.get(batchId);
+  if (!batch) return;
   
   const linkObj = batch.links[index];
   
   if (success) {
     linkObj.status = 'completed';
-    linkObj.result = result;
-    batch.completedCount++;
+    linkObj.data = dataOrError;
+    batch.stats.pending--;
+    batch.stats.completed++;
   } else {
     linkObj.status = 'failed';
-    linkObj.error = result.message || 'Unknown error';
-    batch.failedCount++;
+    linkObj.error = dataOrError.message || 'Unknown error';
+    batch.stats.pending--;
+    batch.stats.failed++;
   }
   
-  // Update status message
-  await updateStatusMessage(bot, batch);
+  updateStatusMessage(bot, batch);
+}
+
+/**
+ * Update the status message
+ * @param {Object} bot - Telegram bot instance
+ * @param {Object} batch - Batch object
+ */
+function updateStatusMessage(bot, batch) {
+  if (!batch.statusMessageId) return;
   
-  // Check if batch is complete
-  if (batch.completedCount + batch.failedCount === batch.links.length) {
-    await finalizeBatch(bot, batchId);
-  }
+  const message = generateStatusMessage(batch);
+  
+  bot.editMessageText(message, {
+    chat_id: batch.chatId,
+    message_id: batch.statusMessageId,
+    parse_mode: 'Markdown'
+  }).catch(err => {
+    stepLogger.debug('STATUS_UPDATE_FAILED', { 
+      batchId: batch.id, 
+      error: err.message 
+    });
+  });
+}
+
+/**
+ * Generate status message for batch
+ * @param {Object} batch - Batch object
+ * @returns {string} Status message
+ */
+function generateStatusMessage(batch) {
+  const { stats } = batch;
+  
+  let message = `📋 *Batch Processing*\n\n` +
+    `Links: ${stats.total} total\n` +
+    `✅ Completed: ${stats.completed}\n` +
+    `⏳ Pending: ${stats.pending}\n` +
+    `❌ Failed: ${stats.failed}\n\n` +
+    `🔄 Progress: ${Math.round((stats.completed + stats.failed) / stats.total * 100)}%\n\n`;
+  
+  // Add link status
+  message += `📝 *Links Status:*\n`;
+  
+  batch.links.forEach((linkObj, idx) => {
+    const statusEmoji = 
+      linkObj.status === 'completed' ? '✅' :
+      linkObj.status === 'failed' ? '❌' :
+      linkObj.status === 'processing' ? '⏳' : '⏳';
+    
+    const truncatedUrl = truncateUrl(linkObj.url);
+    message += `${statusEmoji} ${idx + 1}. ${truncatedUrl}\n`;
+  });
+  
+  return message;
 }
 
 module.exports = {
   createBatch,
   submitBatch,
-  processBatchItem,
   updateBatchItemStatus
 };
