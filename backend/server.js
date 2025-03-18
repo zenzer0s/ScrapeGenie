@@ -1,17 +1,15 @@
-const express = require("express");
-const cors = require("cors");
-const scrapeRoutes = require("./routes/scrape");
-const authRoutes = require("./routes/auth");
-const path = require("path");
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const morgan = require('morgan');
+const scrapeRouter = require('./routes/scrape');
+const instagramRouter = require('./routes/instagram');
+const youtubeRouter = require('./routes/youtube');
+const tiktokRouter = require('./routes/tiktok');
+const pinterestRouter = require('./routes/pinterest');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
-
-const { createBullBoard } = require('@bull-board/api');
-const { BullAdapter } = require('@bull-board/api/bullAdapter');
-const { ExpressAdapter } = require('@bull-board/express');
-const Queue = require('bull');
-const { setupQueueDashboard } = require('./services/queueDashboard');
 
 // Ensure RAM disk directory exists
 const INSTAGRAM_TMP_DIR = "/dev/shm/instagram_tmp";
@@ -57,75 +55,55 @@ if (!require('fs').existsSync(sessionsDir)) {
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// CORS configuration
 app.use(cors());
-app.use(express.json());
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-    res.status(200).json({ 
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
+// Request body parsing
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Set up logging
+const accessLogStream = fs.createWriteStream(path.join(__dirname, 'access.log'), { flags: 'a' });
+app.use(morgan('combined', { stream: accessLogStream }));
+
+// API routes
+app.use('/api/scrape', scrapeRouter);
+app.use('/api/instagram', instagramRouter);
+app.use('/api/youtube', youtubeRouter);
+app.use('/api/tiktok', tiktokRouter);
+app.use('/api/pinterest', pinterestRouter);
+
+// Basic health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date() });
 });
 
-// Mount routes with /api prefix
-app.use("/api/scrape", scrapeRoutes);
-app.use("/auth", authRoutes);
-
-// Create public directory for login page
-const publicDir = path.join(__dirname, 'public');
-if (!require('fs').existsSync(publicDir)) {
-  require('fs').mkdirSync(publicDir, { recursive: true });
-}
-
-// Serve the static files for the Pinterest login page
-app.use(express.static(publicDir));
-
-app.get("/", (req, res) => {
-    res.send("ScrapeGenie API is running...");
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'ScrapeGenie API Server',
+    version: '1.0.0',
+    endpoints: [
+      '/api/scrape',
+      '/api/instagram',
+      '/api/youtube',
+      '/api/tiktok',
+      '/api/pinterest',
+      '/health'
+    ]
+  });
 });
 
-// Create queue reference for monitoring
-const linkQueue = new Queue('link-processing', {
-  redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379,
-  }
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({
+    success: false,
+    error: err.message || 'Internal Server Error'
+  });
 });
 
-// Set up Bull Board
-const serverAdapter = new ExpressAdapter();
-createBullBoard({
-  queues: [new BullAdapter(linkQueue)],
-  serverAdapter
-});
-
-// Add to your Express app - make sure this is protected in production
-const basicAuth = (req, res, next) => {
-  // Simple basic auth for demonstration
-  // In production, use a more secure authentication method
-  const auth = req.headers.authorization;
-  
-  if (!auth || auth !== 'Basic YWRtaW46YWRtaW4=') { // admin:admin in Base64
-    res.set('WWW-Authenticate', 'Basic realm="Bull Dashboard"');
-    return res.status(401).send('Authentication required');
-  }
-  
-  next();
-};
-
-// Apply basic auth middleware to the bull board routes
-app.use('/admin/queues', basicAuth, serverAdapter.getRouter());
-
-(async () => {
-  try {
-    await setupQueueDashboard(app);
-  } catch (error) {
-    console.error(`Failed to setup queue dashboard: ${error.message}`);
-  }
-})();
-
+// Start the server
 app.listen(PORT, () => {
-    console.log(`🚀 Server running at http://0.0.0.0:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
