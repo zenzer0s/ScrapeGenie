@@ -1,4 +1,6 @@
 const os = require('os');
+const { checkBackendHealth } = require('./services/apiService');
+const stepLogger = require('./utils/stepLogger');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid'); // Add this line
 
@@ -25,7 +27,11 @@ axiosInstance.interceptors.response.use(undefined, async (err) => {
   
   // Increase the retry count
   config.retryCount += 1;
-  console.log(`Retrying request (${config.retryCount}/${config.retry}): ${config.url}`);
+  stepLogger.info('HTTP_REQUEST_RETRY', {
+    attempt: config.retryCount,
+    maxRetries: config.retry,
+    url: config.url
+  });
   
   // Create new promise to handle retry
   return new Promise((resolve) => {
@@ -35,6 +41,75 @@ axiosInstance.interceptors.response.use(undefined, async (err) => {
 
 // Add retry property to all requests
 axiosInstance.defaults.retry = 3;
+
+/**
+ * Check if backend is available
+ * @param {TelegramBot} bot - Bot instance
+ * @param {number|string} chatId - Chat ID
+ * @returns {Promise<boolean>} Whether backend is available
+ */
+async function checkBackendAvailable(bot, chatId) {
+  try {
+    const healthCheck = await axiosInstance.get(`/health`);
+    return healthCheck.status === 200;
+  } catch (err) {
+    stepLogger.error('BACKEND_UNAVAILABLE', { 
+      chatId, 
+      error: err.message 
+    });
+    
+    await bot.sendMessage(chatId,
+      '❌ *Backend server not available*\n\n' +
+      'The service is currently unavailable. Please try again later.',
+      { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🏠 Back to Home', callback_data: 'start' }]
+          ]
+        }
+      }
+    );
+    return false;
+  }
+}
+
+/**
+ * Handle errors in commands
+ * @param {TelegramBot} bot - Bot instance
+ * @param {number|string} chatId - Chat ID
+ * @param {Error} error - Error object
+ * @param {string} context - Error context
+ * @returns {Promise<{sentMessage: object, userMessageId: number}>}
+ */
+async function handleCommandError(bot, chatId, error, context, userMessageId) {
+  stepLogger.error(`${context.toUpperCase()}_ERROR`, {
+    chatId,
+    error: error.message
+  });
+  
+  // Determine appropriate error message
+  let errorMessage;
+  if (error.code === 'ECONNREFUSED' || error.message.includes('connect')) {
+    errorMessage = '❌ *Connection Error*\n\n' +
+      'Cannot connect to the server. The server might be down or unavailable.\n\n' +
+      'Please try again later.';
+  } else {
+    errorMessage = `❌ *${context} Error*\n\n` +
+      'Sorry, we encountered a problem. Please try again later.';
+  }
+  
+  const sentMessage = await bot.sendMessage(chatId, errorMessage, { 
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🏠 Back to Home', callback_data: 'start' }]
+      ]
+    }
+  });
+  
+  return { sentMessage, userMessageId };
+}
 
 // Format uptime helper function
 function formatUptime(uptime) {
@@ -48,6 +123,8 @@ function formatUptime(uptime) {
 // /start command
 async function startCommand(bot, msg) {
   const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_START', { chatId });
   
   // Send welcome message
   const sentMessage = await bot.sendMessage(chatId, 
@@ -81,6 +158,9 @@ async function startCommand(bot, msg) {
 // /help command - with 2 columns, 3 rows layout
 async function helpCommand(bot, msg) {
   const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_HELP', { chatId });
+  
   const sentMessage = await bot.sendMessage(chatId,
     `📖 *ScrapeGenie Help Guide*\n\n` +
     `🔹 Send a URL to extract its details.\n\n` +
@@ -120,6 +200,9 @@ async function helpCommand(bot, msg) {
 // /status command
 async function statusCommand(bot, msg, checkBackendStatus) {
   const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_STATUS', { chatId });
+  
   const status = await checkBackendStatus();
   const uptimeStr = formatUptime(process.uptime());
 
@@ -136,6 +219,8 @@ async function statusCommand(bot, msg, checkBackendStatus) {
 // /usage command
 async function usageCommand(bot, msg) {
   const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_USAGE', { chatId });
   
   const memoryUsage = process.memoryUsage();
   const rss = (memoryUsage.rss / 1024 / 1024).toFixed(2); 
@@ -165,26 +250,17 @@ async function usageCommand(bot, msg) {
   return { sentMessage, userMessageId: msg.message_id };
 }
 
-// Fix for the pinterestLoginCommand function:
+// Pinterest login command - improved with proper logging and error handling
 async function pinterestLoginCommand(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
 
+  stepLogger.info('CMD_PINTEREST_LOGIN', { chatId });
+
   try {
     // First check if backend is available
-    try {
-      const healthCheck = await axiosInstance.get(`/health`);
-      if (healthCheck.status !== 200) {
-        throw new Error('Backend health check failed');
-      }
-    } catch (err) {
-      console.error('Backend health check failed:', err);
-      const sentMessage = await bot.sendMessage(chatId,
-        '❌ *Backend server not available*\n\n' +
-        'The Pinterest login service is currently unavailable. Please try again later.',
-        { parse_mode: 'Markdown' }
-      );
-      return { sentMessage, userMessageId: msg.message_id };
+    if (!await checkBackendAvailable(bot, chatId)) {
+      return { userMessageId: msg.message_id };
     }
     
     // Check if user is already logged in
@@ -194,10 +270,10 @@ async function pinterestLoginCommand(bot, msg) {
 
     if (statusResponse.data.success && statusResponse.data.isLoggedIn) {
       const sentMessage = await bot.sendMessage(chatId,
-        '✅ You are already logged in to Pinterest!\n\n' +
+        '✅ *You are already logged in to Pinterest!*\n\n' +
         'You can now send Pinterest links and I\'ll download them using your account.\n\n' +
-        'To log out, use /pinterest_logout'
-        // No parse_mode parameter
+        'To log out, use /pinterest_logout',
+        { parse_mode: 'Markdown' }
       );
       return { sentMessage, userMessageId: msg.message_id };
     }
@@ -238,46 +314,25 @@ async function pinterestLoginCommand(bot, msg) {
       }
     });
     
+    stepLogger.success('PINTEREST_LOGIN_LINK_SENT', { chatId });
     return { sentMessages: [instructionsMessage, loginUrlMessage], userMessageId: msg.message_id };
     
   } catch (error) {
-    console.error('Pinterest login error:', error);
-    
-    // Provide more detailed error messages
-    if (error.code === 'ECONNREFUSED' || error.message.includes('connect')) {
-      const sentMessage = await bot.sendMessage(chatId,
-        '❌ *Connection Error*\n\n' +
-        'Cannot connect to the authentication server. The server might be down or unavailable.\n\n' +
-        'Please try again later.',
-        { parse_mode: 'Markdown' }
-      );
-      return { sentMessage, userMessageId: msg.message_id };
-    } else {
-      const sentMessage = await bot.sendMessage(chatId,
-        '❌ *Login Error*\n\n' +
-        'Sorry, we encountered a problem setting up Pinterest authentication.\n\n' +
-        'Please try again later.',
-        { parse_mode: 'Markdown' }
-      );
-      return { sentMessage, userMessageId: msg.message_id };
-    }
+    return handleCommandError(bot, chatId, error, 'pinterest_login', msg.message_id);
   }
 }
 
-// Pinterest logout command
+// Pinterest logout command - improved with proper logging
 async function pinterestLogoutCommand(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
 
+  stepLogger.info('CMD_PINTEREST_LOGOUT', { chatId });
+
   try {
     // First check if backend is available
-    try {
-      await axiosInstance.get(`/health`);
-    } catch (err) {
-      const sentMessage = await bot.sendMessage(chatId,
-        "❌ Backend server not available.\n\nPlease ensure the backend server is running."
-      );
-      return { sentMessage, userMessageId: msg.message_id };
+    if (!await checkBackendAvailable(bot, chatId)) {
+      return { userMessageId: msg.message_id };
     }
 
     // Try to logout
@@ -289,6 +344,7 @@ async function pinterestLogoutCommand(bot, msg) {
       const sentMessage = await bot.sendMessage(chatId,
         "✅ You have been logged out of Pinterest.",
         {
+          parse_mode: 'Markdown',
           reply_markup: {
             inline_keyboard: [
               [
@@ -299,40 +355,27 @@ async function pinterestLogoutCommand(bot, msg) {
           }
         }
       );
+      stepLogger.success('PINTEREST_LOGOUT_SUCCESS', { chatId });
       return { sentMessage, userMessageId: msg.message_id };
     } else {
       throw new Error(response.data.error || 'Failed to logout');
     }
   } catch (error) {
-    console.error('Pinterest logout error:', error);
-    const sentMessage = await bot.sendMessage(chatId,
-      "❌ Error logging out\n\nSorry, something went wrong. Please try again later."
-    );
-    return { sentMessage, userMessageId: msg.message_id };
+    return handleCommandError(bot, chatId, error, 'pinterest_logout', msg.message_id);
   }
 }
 
-// Fix for the pinterestStatusCommand function:
+// Pinterest status command - improved with proper logging
 async function pinterestStatusCommand(bot, msg) {
   const chatId = msg.chat.id;
   const userId = msg.from.id.toString();
 
+  stepLogger.info('CMD_PINTEREST_STATUS', { chatId });
+
   try {
     // First check if backend is available
-    try {
-      await axiosInstance.get(`/health`);
-    } catch (err) {
-      const sentMessage = await bot.sendMessage(chatId,
-        "❌ Backend server not available.\n\nPlease ensure the backend server is running.",
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: '🏠 Back to Home', callback_data: 'start' }]
-            ]
-          }
-        }
-      );
-      return { sentMessage, userMessageId: msg.message_id };
+    if (!await checkBackendAvailable(bot, chatId)) {
+      return { userMessageId: msg.message_id };
     }
 
     // Check login status
@@ -343,8 +386,9 @@ async function pinterestStatusCommand(bot, msg) {
     if (response.data.success) {
       if (response.data.isLoggedIn) {
         const sentMessage = await bot.sendMessage(chatId,
-          "✅ You are logged in to Pinterest.",
+          "✅ *You are logged in to Pinterest*",
           {
+            parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
                 [
@@ -355,11 +399,13 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
+        stepLogger.success('PINTEREST_STATUS_LOGGED_IN', { chatId });
         return { sentMessage, userMessageId: msg.message_id };
       } else {
         const sentMessage = await bot.sendMessage(chatId,
-          "⚠️ You are not logged in to Pinterest",
+          "⚠️ *You are not logged in to Pinterest*",
           {
+            parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
                 [
@@ -370,25 +416,63 @@ async function pinterestStatusCommand(bot, msg) {
             }
           }
         );
+        stepLogger.info('PINTEREST_STATUS_NOT_LOGGED_IN', { chatId });
         return { sentMessage, userMessageId: msg.message_id };
       }
     } else {
       throw new Error(response.data.error || 'Failed to check login status');
     }
   } catch (error) {
-    console.error('Pinterest status error:', error);
-    const sentMessage = await bot.sendMessage(chatId,
-      "❌ Error checking login status\n\nSorry, something went wrong. Please try again later.",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🏠 Back to Home', callback_data: 'start' }]
-          ]
-        }
-      }
-    );
-    return { sentMessage, userMessageId: msg.message_id };
+    return handleCommandError(bot, chatId, error, 'pinterest_status', msg.message_id);
   }
+}
+
+// Admin commands
+async function addAdminCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  
+  // You might want to check user permissions here
+  
+  stepLogger.info('CMD_ADD_ADMIN', { chatId, userId });
+  
+  const added = notificationService.addAdminChat(chatId);
+  
+  if (added) {
+    await bot.sendMessage(chatId, 
+      "✅ This chat has been added to the admin notification list.\n\n" +
+      "You will now receive notifications when the bot goes online or offline."
+    );
+    stepLogger.success('ADMIN_ADDED', { chatId });
+  } else {
+    await bot.sendMessage(chatId, 
+      "ℹ️ This chat is already in the admin notification list."
+    );
+  }
+  
+  return { sentMessage: null, userMessageId: msg.message_id };
+}
+
+async function removeAdminCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_REMOVE_ADMIN', { chatId });
+  
+  const removed = notificationService.removeAdminChat(chatId);
+  
+  if (removed) {
+    await bot.sendMessage(chatId, 
+      "✅ This chat has been removed from the admin notification list.\n\n" +
+      "You will no longer receive bot status notifications."
+    );
+    stepLogger.success('ADMIN_REMOVED', { chatId });
+  } else {
+    await bot.sendMessage(chatId, 
+      "ℹ️ This chat is not in the admin notification list."
+    );
+  }
+  
+  return { sentMessage: null, userMessageId: msg.message_id };
 }
 
 module.exports = {
@@ -398,5 +482,7 @@ module.exports = {
   usageCommand,
   pinterestLoginCommand,
   pinterestLogoutCommand,
-  pinterestStatusCommand
+  pinterestStatusCommand,
+  addAdminCommand,
+  removeAdminCommand
 };
