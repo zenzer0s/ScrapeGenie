@@ -1,13 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const logger = require('./logger');
-const { extractUrl } = require('./utils/textUtils');
+const { extractUrls } = require('./utils/urlUtils');
 const { callScrapeApi } = require('./services/apiService');
 const { addLinkToQueue, getQueueStats } = require('./services/queueService');
 const { routeContent } = require('./handlers/contentRouter');
-const { extractUrls } = require('./utils/urlUtils');
 const { createBatch, submitBatch } = require('./batch/batchProcessor');
 const stepLogger = require('./utils/stepLogger');
+const logger = require('./utils/consoleLogger');  // <-- FIXED: Import directly, not as a constructor
 
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, '../downloads');
 
@@ -119,29 +118,14 @@ async function handleQueueCommand(bot, msg) {
  * @returns {Promise<void>}
  */
 async function handleMessage(bot, msg, groupProcessor) {
-  // Check if this is a forwarded message and we have a pending collection
-  if (msg.forward_date && global.pendingCollections && global.pendingCollections[msg.from.id]) {
-    const collection = global.pendingCollections[msg.from.id];
-    
-    // Add the message text to the collection
-    if (msg.text) {
-      collection.messages.push(msg.text);
-      
-      // Send a brief acknowledgment
-      await bot.sendMessage(
-        msg.chat.id,
-        `📌 URL message collected (${collection.messages.length} total)`
-      );
-    }
-    return;
-  }
-
-  const urls = extractUrls(msg.text || '');
+  if (!msg || !msg.text) return;
+  
+  const urls = extractUrls(msg.text);
   const chatId = msg.chat.id;
   const userId = msg.from.id;
 
   if (urls.length === 0) {
-    // Handle non-URL messages
+    // No URLs found in message
     return;
   }
 
@@ -177,7 +161,7 @@ async function handleMessage(bot, msg, groupProcessor) {
     const url = urls[0];
     stepLogger.info('SINGLE_URL_DETECTED', {
       chatId,
-      url
+      url: url.substring(0, 50) // Truncate for log
     });
     
     // Send processing message
@@ -191,26 +175,88 @@ async function handleMessage(bot, msg, groupProcessor) {
     const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 1);
     
     if (shouldQueue) {
-      // Add to queue
-      await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
-    } else {
-      // Process directly
       try {
-        const data = await callScrapeApi(url, userId);
-        await bot.deleteMessage(chatId, processingMsg.message_id);
-        await routeContent(bot, chatId, url, data);
-      } catch (error) {
+        // Update message to indicate queueing
         await bot.editMessageText(
-          `❌ Error: ${error.message}`,
+          "🔍 Adding your link to the processing queue...", 
           { chat_id: chatId, message_id: processingMsg.message_id }
         );
+        
+        // Add to queue
+        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
+        
+        // Inform about queue position
+        await bot.editMessageText(
+          `📊 Your link is #${stats.waiting + 1} in queue and will be processed soon.`,
+          { chat_id: chatId, message_id: processingMsg.message_id }
+        );
+        
+        stepLogger.info('URL_QUEUED', {
+          chatId,
+          queuePosition: stats.waiting + 1
+        });
+      } catch (err) {
+        stepLogger.error('QUEUE_ERROR_FALLBACK', { 
+          error: err.message,
+          chatId
+        });
+        // Fallback to direct processing
+        await processUrlDirectly(bot, chatId, url, userId, processingMsg.message_id);
       }
+    } else {
+      // Process directly
+      await processUrlDirectly(bot, chatId, url, userId, processingMsg.message_id);
     }
   } catch (error) {
     stepLogger.error('MESSAGE_HANDLER_ERROR', { 
+      chatId,
       error: error.message 
     });
     await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
+  }
+}
+
+/**
+ * Process a URL directly without queueing
+ * @param {TelegramBot} bot - The Telegram bot instance
+ * @param {string|number} chatId - Chat ID
+ * @param {string} url - URL to process
+ * @param {string|number} userId - User ID
+ * @param {number} messageId - Processing message ID
+ */
+async function processUrlDirectly(bot, chatId, url, userId, messageId) {
+  try {
+    // Update message
+    await bot.editMessageText(
+      "⚙️ Processing your link...", 
+      { chat_id: chatId, message_id: messageId }
+    );
+    
+    stepLogger.info('DIRECT_PROCESSING', {
+      chatId,
+      url: url.substring(0, 50)
+    });
+    
+    const data = await callScrapeApi(url, userId);
+    await bot.deleteMessage(chatId, messageId);
+    await routeContent(bot, chatId, url, data);
+    
+    stepLogger.success('URL_PROCESSED', {
+      chatId,
+      url: url.substring(0, 50)
+    });
+  } catch (error) {
+    stepLogger.error('DIRECT_PROCESSING_ERROR', {
+      chatId,
+      url: url.substring(0, 50),
+      error: error.message
+    });
+    
+    // Update the processing message with the error
+    await bot.editMessageText(
+      `❌ Error: ${error.message}`,
+      { chat_id: chatId, message_id: messageId }
+    );
   }
 }
 
