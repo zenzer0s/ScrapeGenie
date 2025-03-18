@@ -1,95 +1,142 @@
 const Queue = require('bull');
-const path = require('path');
-const fs = require('fs');
+const config = require('../config/botConfig');
 const stepLogger = require('../utils/stepLogger');
 
-// Ensure logs directory exists
-const logsDir = path.join(__dirname, '../../logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
-}
+// Queue setup - use a module object instead of separate variables
+const queueState = {
+  linkQueue: null,
+  queueEnabled: false
+};
 
-// Create a write stream for queue logs
-const queueLogStream = fs.createWriteStream(path.join(logsDir, 'queue.log'), { flags: 'a' });
-
-// Helper to log messages to both console and file
-function logQueue(message) {
-  const timestamp = new Date().toISOString();
-  const logEntry = `[${timestamp}] ${message}\n`;
-  console.log(message);
-  queueLogStream.write(logEntry);
-}
-
-// Queue setup
-let linkQueue;
-let queueEnabled = false;
-
-// Initialize the queue
+/**
+ * Initialize the queue
+ * @returns {Promise<boolean>} Success or failure
+ */
 async function initQueue() {
   stepLogger.info('INIT_QUEUE_START');
+  
   try {
+    // Skip if already initialized
+    if (queueState.queueEnabled && queueState.linkQueue) {
+      stepLogger.info('QUEUE_ALREADY_ACTIVE');
+      return true;
+    }
+    
     // Create Bull queue with Redis connection
-    linkQueue = new Queue('link-processing', {
-      redis: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379
-      },
+    queueState.linkQueue = new Queue('link-processing', {
+      redis: config.redis,
       defaultJobOptions: {
         attempts: 3,
         backoff: {
           type: 'exponential',
           delay: 5000
         },
-        removeOnComplete: 100,
-        removeOnFail: 200
+        removeOnComplete: 100, // Keep last 100 completed jobs
+        removeOnFail: 200      // Keep last 200 failed jobs
       }
     });
     
-    // Set up queue event handlers
-    linkQueue.on('completed', job => {
-      logQueue(`✅ Job completed: ${job.id}, URL: ${job.data.url}`);
+    // Set up queue event handlers with proper logging
+    queueState.linkQueue.on('completed', job => {
+      stepLogger.success('QUEUE_JOB_COMPLETE', { 
+        jobId: job.id, 
+        url: job.data.url.substring(0, 50)
+      });
     });
     
-    linkQueue.on('failed', (job, err) => {
-      logQueue(`❌ Job failed: ${job.id}, URL: ${job.data.url}, Error: ${err.message}`);
+    queueState.linkQueue.on('failed', (job, err) => {
+      stepLogger.error('QUEUE_JOB_FAILED', { 
+        jobId: job.id, 
+        url: job.data.url.substring(0, 50), 
+        error: err.message 
+      });
     });
     
-    linkQueue.on('stalled', job => {
-      logQueue(`⚠️ Job stalled: ${job.id}, URL: ${job.data.url}`);
+    queueState.linkQueue.on('stalled', job => {
+      stepLogger.warn('QUEUE_JOB_STALLED', { 
+        jobId: job.id, 
+        url: job.data.url.substring(0, 50)
+      });
     });
     
-    linkQueue.on('error', error => {
-      logQueue(`🔴 Queue error: ${error.message}`);
-      queueEnabled = false;
+    queueState.linkQueue.on('error', error => {
+      stepLogger.error('QUEUE_ERROR', { error: error.message });
+      queueState.queueEnabled = false;
     });
     
-    // Test connection
-    await linkQueue.getJobCounts();
-    queueEnabled = true;
-    logQueue('✅ Queue initialized successfully');
-    stepLogger.info('INIT_QUEUE_SUCCESS', { queueEnabled: true });
+    // Test connection by getting job counts
+    await queueState.linkQueue.getJobCounts();
+    queueState.queueEnabled = true;
+    
+    // Setup queue maintenance
+    setupQueueMaintenance();
+    
+    stepLogger.success('INIT_QUEUE_SUCCESS', { queueEnabled: true });
     return true;
   } catch (error) {
     stepLogger.error('INIT_QUEUE_FAILED', { error: error.message });
-    logQueue(`❌ Queue initialization failed: ${error.message}`);
-    queueEnabled = false;
+    queueState.queueEnabled = false;
     return false;
   }
 }
 
-// Initialize queue when module is loaded
-initQueue();
+/**
+ * Set up periodic queue maintenance
+ */
+function setupQueueMaintenance() {
+  // Clean old jobs every 12 hours
+  setInterval(async () => {
+    try {
+      if (!queueState.linkQueue) return;
+      
+      const result = await queueState.linkQueue.clean(1000 * 60 * 60 * 24 * 7, 'completed');
+      if (result && result.length > 0) {
+        stepLogger.info('QUEUE_CLEANUP_COMPLETED', { 
+          count: result.length
+        });
+      }
+      
+      const failedResult = await queueState.linkQueue.clean(1000 * 60 * 60 * 24 * 3, 'failed');
+      if (failedResult && failedResult.length > 0) {
+        stepLogger.info('QUEUE_CLEANUP_FAILED', { 
+          count: failedResult.length
+        });
+      }
+    } catch (error) {
+      stepLogger.error('QUEUE_CLEANUP_ERROR', { error: error.message });
+    }
+  }, 12 * 60 * 60 * 1000); // 12 hours
+}
 
-// Add a job to the queue
+/**
+ * Add a job to the queue
+ * @param {string} url - URL to process
+ * @param {string|number} chatId - Chat ID
+ * @param {string|number} userId - User ID
+ * @param {string|number} messageId - Message ID for status updates
+ * @returns {Promise<object>} Job object
+ */
 async function addLinkToQueue(url, chatId, userId, messageId) {
   try {
-    stepLogger.info('ADD_TO_QUEUE_START', { url, chatId });
+    stepLogger.info('ADD_TO_QUEUE_START', { 
+      url: url.substring(0, 50), 
+      chatId 
+    });
     
-    if (!queueEnabled || !linkQueue) {
-      throw new Error('Queue system disabled');
+    // Try to initialize queue if not active
+    if (!queueState.queueEnabled || !queueState.linkQueue) {
+      stepLogger.warn('QUEUE_NOT_ENABLED', { 
+        attemptingInit: true 
+      });
+      
+      const initResult = await initQueue();
+      if (!initResult) {
+        throw new Error('Queue system disabled and initialization failed');
+      }
     }
     
-    const job = await linkQueue.add({
+    // Add job to queue
+    const job = await queueState.linkQueue.add({
       url,
       chatId,
       userId,
@@ -97,56 +144,94 @@ async function addLinkToQueue(url, chatId, userId, messageId) {
       timestamp: Date.now()
     });
     
-    logQueue(`➕ Added job ${job.id} to queue: ${url} for chat ${chatId}`);
-    stepLogger.info('ADD_TO_QUEUE_SUCCESS', { jobId: job.id, url });
+    stepLogger.success('ADD_TO_QUEUE_SUCCESS', { 
+      jobId: job.id, 
+      url: url.substring(0, 50)
+    });
+    
     return job;
   } catch (error) {
-    stepLogger.error('ADD_TO_QUEUE_FAILED', { url, error: error.message });
-    logQueue(`❌ Failed to add job to queue: ${error.message}`);
+    stepLogger.error('ADD_TO_QUEUE_FAILED', { 
+      url: url.substring(0, 50), 
+      error: error.message 
+    });
     throw error;
   }
 }
 
-// Get queue statistics
+/**
+ * Get current queue statistics
+ * @returns {Promise<object>} Queue statistics
+ */
 async function getQueueStats() {
   try {
-    if (!queueEnabled || !linkQueue) {
+    if (!queueState.queueEnabled || !queueState.linkQueue) {
       return { 
-        waiting: 0, active: 0, completed: 0, failed: 0, total: 0, 
-        status: 'disabled'
+        waiting: 0, active: 0, completed: 0, failed: 0, 
+        delayed: 0, total: 0, status: 'disabled'
       };
     }
     
-    const [waiting, active, completed, failed] = await Promise.all([
-      linkQueue.getWaitingCount().catch(() => 0),
-      linkQueue.getActiveCount().catch(() => 0),
-      linkQueue.getCompletedCount().catch(() => 0),
-      linkQueue.getFailedCount().catch(() => 0)
-    ]);
+    // Get counts in parallel for efficiency
+    const counts = await queueState.linkQueue.getJobCounts();
     
     return {
-      waiting,
-      active,
-      completed,
-      failed,
-      total: waiting + active,
+      ...counts,
+      total: counts.waiting + counts.active,
       status: 'enabled'
     };
   } catch (error) {
-    logQueue(`❌ Failed to get queue stats: ${error.message}`);
+    stepLogger.error('GET_QUEUE_STATS_FAILED', { error: error.message });
     return { error: error.message, status: 'error' };
   }
 }
 
-// Function to check if queue is enabled
+/**
+ * Check if queue is currently enabled
+ * @returns {boolean} Queue status
+ */
 function isQueueEnabled() {
-  return queueEnabled;
+  return queueState.queueEnabled;
 }
 
+/**
+ * Gracefully shut down the queue
+ * @returns {Promise<void>}
+ */
+async function shutdownQueue() {
+  if (queueState.linkQueue) {
+    stepLogger.info('QUEUE_SHUTDOWN_START');
+    
+    try {
+      await queueState.linkQueue.close();
+      stepLogger.success('QUEUE_SHUTDOWN_COMPLETE');
+    } catch (error) {
+      stepLogger.error('QUEUE_SHUTDOWN_ERROR', { error: error.message });
+    }
+  }
+}
+
+// Register graceful shutdown
+process.on('SIGTERM', async () => {
+  await shutdownQueue();
+});
+
+process.on('SIGINT', async () => {
+  await shutdownQueue();
+});
+
+// Getter for linkQueue
+function getLinkQueue() {
+  return queueState.linkQueue;
+}
+
+// Export functions instead of variables
 module.exports = {
-  linkQueue,
+  get linkQueue() { return queueState.linkQueue; }, // Getter will always return current value
   addLinkToQueue,
   getQueueStats,
-  isQueueEnabled,
-  initQueue
+  isQueueEnabled: () => queueState.queueEnabled, // Changed to a function that returns current value
+  initQueue,
+  shutdownQueue,
+  initialized: false
 };
