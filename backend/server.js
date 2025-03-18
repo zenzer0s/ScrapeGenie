@@ -3,11 +3,6 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
-const scrapeRouter = require('./routes/scrape');
-const instagramRouter = require('./routes/instagram');
-const youtubeRouter = require('./routes/youtube');
-const tiktokRouter = require('./routes/tiktok');
-const pinterestRouter = require('./routes/pinterest');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 // Ensure RAM disk directory exists
@@ -66,27 +61,33 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const log = `${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`;
-    console.log(log);
-    
-    // Optional: Write to log file
-    if (fs.existsSync(path.join(__dirname))) {
-      fs.appendFile(
-        path.join(__dirname, 'access.log'), 
-        log + '\n', 
-        err => { if (err) console.error('Error writing to log:', err); }
-      );
-    }
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
   });
   next();
 });
 
-// API routes
-app.use('/api/scrape', scrapeRouter);
-app.use('/api/instagram', instagramRouter);
-app.use('/api/youtube', youtubeRouter);
-app.use('/api/tiktok', tiktokRouter);
-app.use('/api/pinterest', pinterestRouter);
+// Dynamically load available routes
+const routesDir = path.join(__dirname, 'routes');
+const availableEndpoints = ['/health'];
+
+if (fs.existsSync(routesDir)) {
+  fs.readdirSync(routesDir).forEach(file => {
+    if (file.endsWith('.js')) {
+      const routeName = file.replace('.js', '');
+      const routePath = `/api/${routeName}`;
+      try {
+        const router = require(`./routes/${routeName}`);
+        app.use(routePath, router);
+        availableEndpoints.push(routePath);
+        console.log(`Route loaded: ${routePath}`);
+      } catch (err) {
+        console.error(`Failed to load route ${routePath}:`, err.message);
+      }
+    }
+  });
+} else {
+  console.warn('Routes directory not found:', routesDir);
+}
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
@@ -98,14 +99,7 @@ app.get('/', (req, res) => {
   res.json({ 
     message: 'ScrapeGenie API Server',
     version: '1.0.0',
-    endpoints: [
-      '/api/scrape',
-      '/api/instagram',
-      '/api/youtube',
-      '/api/tiktok',
-      '/api/pinterest',
-      '/health'
-    ]
+    endpoints: availableEndpoints
   });
 });
 
