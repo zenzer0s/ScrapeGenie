@@ -253,30 +253,41 @@ function generateStatusMessage(batch) {
   const completed = batch.completedCount;
   const failed = batch.failedCount;
   const pending = total - completed - failed;
+  const percentComplete = Math.floor(((completed + failed) / total) * 100);
   
-  let message = `<b>Processing ${total} links</b>\n\n`;
+  // Status icons for quick reference
+  const statusIcon = {
+    'pending': '⏳',
+    'processing': '🔄',
+    'completed': '✅',
+    'failed': '❌'
+  };
   
-  // Add progress bar
+  // Progress bar generation
   const progress = Math.floor(((completed + failed) / total) * 10);
   const progressBar = '▓'.repeat(progress) + '░'.repeat(10 - progress);
-  message += `${progressBar} ${Math.floor(((completed + failed) / total) * 100)}%\n\n`;
+  
+  // Build the message sections
+  let message = `<b>Processing ${total} links</b>\n\n`;
+  message += `${progressBar} ${percentComplete}%\n\n`;
   
   // Add counts
   message += `✅ Completed: ${completed}\n`;
   message += `❌ Failed: ${failed}\n`;
   message += `⏳ Pending: ${pending}\n\n`;
   
-  // Add details for each link
-  batch.links.forEach((link, i) => {
-    const statusIcon = {
-      'pending': '⏳',
-      'processing': '🔄',
-      'completed': '✅',
-      'failed': '❌'
-    }[link.status];
-    
-    message += `${statusIcon} ${i+1}. ${truncateUrl(link.url)}\n`;
-  });
+  // Add link details (limit to 20 if there are too many)
+  const displayLimit = batch.links.length > 20 ? 20 : batch.links.length;
+  
+  for (let i = 0; i < displayLimit; i++) {
+    const link = batch.links[i];
+    message += `${statusIcon[link.status]} ${i+1}. ${truncateUrl(link.url)}\n`;
+  }
+  
+  // Show message if some links are not displayed
+  if (batch.links.length > displayLimit) {
+    message += `\n...and ${batch.links.length - displayLimit} more links\n`;
+  }
   
   // Add elapsed time
   const elapsed = Math.floor((Date.now() - batch.startTime) / 1000);
@@ -306,37 +317,55 @@ async function finalizeBatch(bot, batchId) {
     // Update final status
     await updateStatusMessage(bot, batch);
     
-    // Send results
+    // Calculate success rate
+    const successRate = Math.round((batch.completedCount / batch.links.length) * 100);
+    
+    // Send completion message
     await bot.sendMessage(
       batch.chatId,
-      `✅ Batch processing complete! Sending results in order...`
+      `✅ Batch processing complete! ${batch.completedCount}/${batch.links.length} links processed successfully (${successRate}%)`
     );
     
     // Wait a moment for UI clarity
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // Send each result in order
+    // Send results for each successful link
+    let resultsSent = 0;
     for (const link of batch.links) {
       if (link.status === 'completed' && link.result) {
         await routeContent(bot, batch.chatId, link.url, link.result);
+        resultsSent++;
         
         // Add a small delay between messages for better readability
         await new Promise(resolve => setTimeout(resolve, 500));
       } else if (link.status === 'failed') {
-        await bot.sendMessage(
-          batch.chatId,
-          `❌ Failed to process ${link.url}: ${link.error || 'Unknown error'}`
-        );
-        
-        // Add a small delay between messages
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Group together multiple failures to avoid spamming
+        // We'll report them in a final summary
       }
+    }
+    
+    // Send failure summary if needed
+    if (batch.failedCount > 0) {
+      let failureMessage = `⚠️ ${batch.failedCount} link(s) failed to process:\n\n`;
+      
+      batch.links.filter(l => l.status === 'failed').forEach((link, i) => {
+        if (i < 5) { // Limit to first 5 failures to avoid message length issues
+          failureMessage += `${i+1}. ${truncateUrl(link.url)}: ${link.error || 'Unknown error'}\n`;
+        }
+      });
+      
+      if (batch.failedCount > 5) {
+        failureMessage += `\n...and ${batch.failedCount - 5} more failures.`;
+      }
+      
+      await bot.sendMessage(batch.chatId, failureMessage);
     }
     
     stepLogger.info('FINALIZE_BATCH_COMPLETE', { 
       batchId, 
       completed: batch.completedCount,
-      failed: batch.failedCount
+      failed: batch.failedCount,
+      resultsSent
     });
     
     // Clean up
