@@ -40,23 +40,87 @@ async function sendSafeMessage(bot, chatId, text, options = {}) {
 }
 
 /**
- * Cleans up Instagram text by removing hashtags and excessive formatting
- * @param {string} text - The text to clean up
- * @returns {string} Cleaned text
+ * Cleans up and formats Instagram text for better display in Telegram
+ * @param {string} text - Original Instagram caption
+ * @returns {string} Formatted text for Telegram
  */
 function cleanupInstagramText(text) {
   if (!text) return '';
   
-  return text
-    // Remove all hashtags completely
-    .replace(/#\w+/g, '')
-    // Remove excessive line breaks
+  // Preserve paragraphs and line breaks in Instagram captions
+  let formatted = text
+    // First, normalize all line breaks to \n
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    
+    // Replace multiple blank lines with exactly 2 line breaks (one empty line)
     .replace(/\n{3,}/g, '\n\n')
-    // Remove excessive dots
-    .replace(/\.{2,}/g, '...')
-    // Clean up spaces
-    .replace(/\s+/g, ' ')
+    
+    // Ensure hashtags start on their own line if there are many of them
+    .replace(/(\s)(#\w+\s?#\w+\s?#\w+)/, '$1\n$2')
+    
+    // Bold @mentions for better visibility
+    .replace(/@([a-zA-Z0-9._]+)/g, '<b>@$1</b>')
+    
+    // Make hashtags italic
+    .replace(/#([a-zA-Z0-9_]+)/g, '<i>#$1</i>')
+    
+    // Make URLs clickable
+    .replace(
+      /(https?:\/\/[^\s]+)/g, 
+      '<a href="$1">$1</a>'
+    )
+    
+    // Ensure the text ends with exactly one line break
     .trim();
+  
+  // Escape HTML special characters except for our added tags
+  formatted = escapeHtmlExceptTags(formatted);
+  
+  return formatted;
+}
+
+/**
+ * Escapes HTML special characters while preserving existing HTML tags
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text with preserved tags
+ */
+function escapeHtmlExceptTags(text) {
+  // First, temporarily replace HTML tags we want to keep
+  const preservedTags = [];
+  let index = 0;
+  
+  // Extract HTML tags to preserve them
+  text = text.replace(/<\/?[bi]>|<a\s+href="[^"]*">[^<]*<\/a>/gi, match => {
+    const placeholder = `__HTML_TAG_${index}__`;
+    preservedTags.push(match);
+    index++;
+    return placeholder;
+  });
+  
+  // Escape HTML special characters
+  text = escapeHtml(text);
+  
+  // Restore preserved HTML tags
+  for (let i = 0; i < preservedTags.length; i++) {
+    text = text.replace(`__HTML_TAG_${i}__`, preservedTags[i]);
+  }
+  
+  return text;
+}
+
+/**
+ * Escapes HTML special characters
+ * @param {string} text - Text to escape
+ * @returns {string} Escaped text
+ */
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 /**
@@ -75,5 +139,7 @@ module.exports = {
   escapeMarkdown,
   sendSafeMessage,
   cleanupInstagramText,
-  extractUrl
+  extractUrl,
+  escapeHtml,
+  escapeHtmlExceptTags
 };
