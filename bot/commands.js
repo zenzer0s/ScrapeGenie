@@ -475,7 +475,47 @@ async function removeAdminCommand(bot, msg) {
   return { sentMessage: null, userMessageId: msg.message_id };
 }
 
+const statusNotifier = require('./services/statusNotifier');
+
+// Add admin command
+async function addAdminCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_ADD_ADMIN', { chatId });
+  
+  const added = statusNotifier.addAdmin(chatId);
+  
+  const sentMessage = await bot.sendMessage(chatId,
+    added ? 
+      "✅ *Admin notifications enabled!*\n\nYou'll receive alerts when the bot goes online or offline." :
+      "ℹ️ You're already receiving admin notifications.",
+    { parse_mode: 'Markdown' }
+  );
+  
+  return { sentMessage, userMessageId: msg.message_id };
+}
+
+// Remove admin command
+async function removeAdminCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  
+  stepLogger.info('CMD_REMOVE_ADMIN', { chatId });
+  
+  const removed = statusNotifier.removeAdmin(chatId);
+  
+  const sentMessage = await bot.sendMessage(chatId,
+    removed ? 
+      "✅ *Admin notifications disabled*\n\nYou'll no longer receive bot status alerts." :
+      "ℹ️ You weren't receiving admin notifications.",
+    { parse_mode: 'Markdown' }
+  );
+  
+  return { sentMessage, userMessageId: msg.message_id };
+}
+
+// Make sure to add these to your exports
 module.exports = {
+  // existing exports
   startCommand,
   helpCommand,
   statusCommand,
@@ -483,6 +523,7 @@ module.exports = {
   pinterestLoginCommand,
   pinterestLogoutCommand,
   pinterestStatusCommand,
+  // new exports
   addAdminCommand,
   removeAdminCommand
 };
