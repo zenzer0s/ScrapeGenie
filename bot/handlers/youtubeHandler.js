@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { escapeMarkdown } = require('../utils/textUtils');
+const stepLogger = require('../utils/stepLogger');
 
 /**
  * Handles YouTube content
@@ -11,6 +12,8 @@ const { escapeMarkdown } = require('../utils/textUtils');
  */
 async function handleYoutube(bot, chatId, url, data) {
   try {
+    stepLogger.info('YOUTUBE_HANDLER_START', { chatId, url: url.substring(0, 50) });
+    
     // Create keyboard markup with URL
     const keyboard = {
       inline_keyboard: [
@@ -18,41 +21,170 @@ async function handleYoutube(bot, chatId, url, data) {
       ]
     };
     
-    if (data.filepath) {
-      const caption = `*${escapeMarkdown(data.title || '')}*`;
+    // Prepare caption
+    let caption = '';
+    
+    // Add title
+    if (data.title) {
+      caption += `*${escapeMarkdown(data.title)}*`;
+      stepLogger.debug('YOUTUBE_TITLE', { title: data.title.substring(0, 50) });
+    } else {
+      caption += '*YouTube Video*';
+    }
+    
+    // Add channel name if available
+    if (data.channelName) {
+      caption += `\n\n👤 *Channel:* ${escapeMarkdown(data.channelName)}`;
+    }
+    
+    // Add description if available (truncated)
+    if (data.description && data.description.trim()) {
+      const maxDescLength = 300; // Reasonable length for caption
+      let desc = data.description.trim();
       
-      if (!fs.existsSync(data.filepath)) {
-        throw new Error(`Video file not found at: ${data.filepath}`);
+      if (desc.length > maxDescLength) {
+        desc = desc.substring(0, maxDescLength) + '...';
       }
       
-      console.log('📹 Sending YouTube video...');
-      await bot.sendVideo(chatId, data.filepath, {
-        caption: caption,
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
-    } else {
-      const caption = `*${escapeMarkdown(data.title || 'YouTube Video')}*`;
+      caption += `\n\n${escapeMarkdown(desc)}`;
+      stepLogger.debug('YOUTUBE_DESC', { descLength: data.description.length });
+    }
+    
+    // Add video stats if available
+    if (data.views || data.likes || data.published) {
+      caption += '\n';
       
-      if (data.mediaUrl) {
-        await bot.sendPhoto(chatId, data.mediaUrl, { 
-          caption: caption, 
-          parse_mode: 'Markdown',
-          reply_markup: keyboard 
-        });
-      } else {
-        await bot.sendMessage(chatId, caption, { 
-          parse_mode: 'Markdown',
-          reply_markup: keyboard 
-        });
+      if (data.views) {
+        caption += `\n👁️ *Views:* ${formatNumber(data.views)}`;
+      }
+      
+      if (data.likes) {
+        caption += `\n👍 *Likes:* ${formatNumber(data.likes)}`;
+      }
+      
+      if (data.published) {
+        try {
+          const date = new Date(data.published);
+          if (!isNaN(date)) {
+            caption += `\n📅 *Published:* ${date.toLocaleDateString()}`;
+          }
+        } catch (e) {
+          // Ignore invalid date format
+        }
       }
     }
     
-    console.log('✅ YouTube content sent successfully');
+    // Check if we have a downloaded video file
+    if (data.filepath) {
+      // Verify file exists
+      if (!fs.existsSync(data.filepath)) {
+        stepLogger.error('YOUTUBE_FILE_NOT_FOUND', { filepath: data.filepath });
+        throw new Error(`Video file not found at: ${data.filepath}`);
+      }
+      
+      // Get file size
+      const stats = fs.statSync(data.filepath);
+      const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+      
+      stepLogger.info('YOUTUBE_SEND_VIDEO', { 
+        filepath: data.filepath,
+        fileSize: `${fileSizeMB} MB` 
+      });
+      
+      const captionMaxLength = 1024; // Telegram caption limit
+      
+      // Send video file
+      await bot.sendVideo(chatId, fs.createReadStream(data.filepath), {
+        caption: caption.length <= captionMaxLength ? caption : '',
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+        supports_streaming: true
+      });
+      
+      // Send caption separately if it's too long
+      if (caption.length > captionMaxLength) {
+        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
+      }
+      
+      // Clean up the file after sending
+      try {
+        fs.unlinkSync(data.filepath);
+        stepLogger.debug('YOUTUBE_FILE_CLEANUP', { filepath: data.filepath });
+      } catch (cleanupError) {
+        stepLogger.warn('YOUTUBE_FILE_CLEANUP_FAILED', { 
+          error: cleanupError.message 
+        });
+      }
+    } else if (data.mediaUrl) {
+      // We have a thumbnail image
+      stepLogger.info('YOUTUBE_SEND_THUMBNAIL', { mediaUrl: data.mediaUrl });
+      
+      const captionMaxLength = 1024; // Telegram caption limit
+      
+      await bot.sendPhoto(chatId, data.mediaUrl, { 
+        caption: caption.length <= captionMaxLength ? caption : '',
+        parse_mode: 'Markdown',
+        reply_markup: keyboard 
+      });
+      
+      // Send caption separately if it's too long
+      if (caption.length > captionMaxLength) {
+        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
+      }
+    } else {
+      // No media available, send text only
+      stepLogger.info('YOUTUBE_SEND_TEXT_ONLY');
+      
+      await bot.sendMessage(chatId, caption, { 
+        parse_mode: 'Markdown',
+        reply_markup: keyboard 
+      });
+    }
+    
+    stepLogger.success('YOUTUBE_HANDLER_COMPLETE', { chatId });
   } catch (error) {
-    console.error(`❌ YouTube handler error: ${error.message}`);
+    stepLogger.error('YOUTUBE_HANDLER_ERROR', { 
+      chatId, 
+      url: url.substring(0, 50),
+      error: error.message 
+    });
+    
+    // Send a fallback message to the user
+    try {
+      await bot.sendMessage(
+        chatId,
+        `Sorry, I couldn't process this YouTube video properly.\n\nError: ${error.message}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🎬 Watch on YouTube', url: url }]
+            ]
+          }
+        }
+      );
+    } catch (msgError) {
+      stepLogger.error('YOUTUBE_FALLBACK_FAILED', { 
+        chatId, 
+        error: msgError.message 
+      });
+    }
+    
     throw error;
   }
+}
+
+/**
+ * Format large numbers with commas
+ * @param {number|string} num - Number to format
+ * @returns {string} Formatted number
+ */
+function formatNumber(num) {
+  if (!num) return '0';
+  
+  const n = parseInt(num, 10);
+  if (isNaN(n)) return String(num);
+  
+  return n.toLocaleString();
 }
 
 module.exports = { handleYoutube };

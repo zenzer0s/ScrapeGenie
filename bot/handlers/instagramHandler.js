@@ -1,5 +1,6 @@
 const fs = require('fs');
-const { cleanupInstagramText } = require('../utils/textUtils');
+const { cleanupInstagramText, escapeHtml } = require('../utils/textUtils');
+const stepLogger = require('../utils/stepLogger');
 
 /**
  * Handles Instagram content
@@ -11,13 +12,18 @@ const { cleanupInstagramText } = require('../utils/textUtils');
  */
 async function handleInstagram(bot, chatId, url, data) {
   try {
+    stepLogger.info('INSTAGRAM_HANDLER_START', { chatId, url: url.substring(0, 50) });
+    
     const mediaPath = data.mediaPath;
-    let caption = data.caption || '';
+    const caption = data.caption ? cleanupInstagramText(data.caption) : '';
     const isVideo = data.is_video || false;
     const isCarousel = data.is_carousel || false;
     
-    console.log(`📂 Instagram media path:`, mediaPath);
-    console.log(`🎬 Is video: ${isVideo}, Is carousel: ${isCarousel}`);
+    stepLogger.debug('INSTAGRAM_MEDIA_INFO', { 
+      mediaType: isVideo ? 'video' : (isCarousel ? 'carousel' : 'image'),
+      captionLength: caption.length,
+      mediaPath: Array.isArray(mediaPath) ? `${mediaPath.length} items` : mediaPath 
+    });
     
     // Create keyboard markup with URL
     const keyboard = {
@@ -28,19 +34,22 @@ async function handleInstagram(bot, chatId, url, data) {
     
     // Handle carousel posts (multiple images)
     if (isCarousel && Array.isArray(mediaPath) && mediaPath.length > 0) {
-      console.log(`🖼️ Sending carousel with ${mediaPath.length} images...`);
+      stepLogger.info('INSTAGRAM_CAROUSEL', { itemCount: mediaPath.length });
       
-      // Split mediaPath into chunks of 6 images each
+      // Split mediaPath into chunks of 6 images each (Telegram limit)
       const mediaChunks = [];
       for (let i = 0; i < mediaPath.length; i += 6) {
         mediaChunks.push(mediaPath.slice(i, i + 6));
       }
       
+      let chunkIndex = 0;
       for (const chunk of mediaChunks) {
+        chunkIndex++;
+        
         // Prepare media group format for Telegram
         const mediaGroup = chunk.map((filePath) => {
           if (!fs.existsSync(filePath)) {
-            console.warn(`⚠️ File not found: ${filePath}`);
+            stepLogger.warn('INSTAGRAM_FILE_NOT_FOUND', { filePath });
             return null;
           }
           
@@ -52,16 +61,53 @@ async function handleInstagram(bot, chatId, url, data) {
         }).filter(Boolean); // Remove any nulls from non-existent files
         
         if (mediaGroup.length === 0) {
-          throw new Error('No valid files found in carousel');
+          stepLogger.error('INSTAGRAM_NO_VALID_FILES', { chunkIndex });
+          continue; // Skip to next chunk instead of failing completely
         }
         
         // Send as media group
         await bot.sendMediaGroup(chatId, mediaGroup);
+        stepLogger.debug('INSTAGRAM_CHUNK_SENT', { 
+          chunkIndex, 
+          totalChunks: mediaChunks.length,
+          itemsInChunk: mediaGroup.length 
+        });
       }
       
-      // Send caption separately if there are more than 6 images
-      if (mediaPath.length > 6) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML', reply_markup: keyboard });
+      // Send caption separately
+      if (caption && caption.trim().length > 0) {
+        const captionMaxLength = 4000; // Telegram limit
+        
+        // Add emoji indicator and preserve format better
+        const formattedCaption = `📝 <b>Caption:</b>\n\n${caption}`;
+        
+        if (formattedCaption.length <= captionMaxLength) {
+          await bot.sendMessage(chatId, formattedCaption, { 
+            parse_mode: 'HTML', 
+            reply_markup: keyboard,
+            disable_web_page_preview: true // Prevent URL previews in captions
+          });
+        } else {
+          // Split long captions
+          const parts = Math.ceil(formattedCaption.length / captionMaxLength);
+          
+          for (let i = 0; i < parts; i++) {
+            const part = formattedCaption.substring(i * captionMaxLength, (i + 1) * captionMaxLength);
+            const prefix = i > 0 ? '📝 <b>Caption (continued):</b>\n\n' : '';
+            
+            // Only add keyboard to the last part
+            const options = {
+              parse_mode: 'HTML',
+              disable_web_page_preview: true
+            };
+            
+            if (i === parts - 1) {
+              options.reply_markup = keyboard;
+            }
+              
+            await bot.sendMessage(chatId, prefix + part, options);
+          }
+        }
       } else {
         // Send button separately since media groups don't support inline keyboards
         await bot.sendMessage(chatId, '📱 View original post:', {
@@ -72,42 +118,119 @@ async function handleInstagram(bot, chatId, url, data) {
     } else if (isVideo) {
       // Single video
       if (!fs.existsSync(mediaPath)) {
+        stepLogger.error('INSTAGRAM_VIDEO_NOT_FOUND', { mediaPath });
         throw new Error(`Video file not found at: ${mediaPath}`);
       }
       
-      console.log('📹 Sending Instagram video...');
-      await bot.sendVideo(chatId, mediaPath, {
-        caption: caption.length <= 1024 ? caption : '',
+      stepLogger.info('INSTAGRAM_SEND_VIDEO', { fileSize: getFileSize(mediaPath) });
+      
+      const captionMaxLength = 1024; // Telegram caption limit
+      const videoCaption = caption.length <= captionMaxLength ? caption : '';
+      
+      await bot.sendVideo(chatId, fs.createReadStream(mediaPath), {
+        caption: videoCaption,
+        parse_mode: 'HTML',
         reply_markup: keyboard
       });
       
       // Send caption separately if it's too long
-      if (caption.length > 1024) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+      if (caption.length > captionMaxLength) {
+        await bot.sendMessage(chatId, `📝 <b>Caption:</b>\n\n${caption}`, { 
+          parse_mode: 'HTML',
+          disable_web_page_preview: true 
+        });
       }
       
     } else {
       // Single image
       if (!fs.existsSync(mediaPath)) {
+        stepLogger.error('INSTAGRAM_IMAGE_NOT_FOUND', { mediaPath });
         throw new Error(`Image file not found at: ${mediaPath}`);
       }
       
-      console.log('🖼️ Sending Instagram image...');
-      await bot.sendPhoto(chatId, mediaPath, {
-        caption: caption.length <= 1024 ? caption : '',
+      stepLogger.info('INSTAGRAM_SEND_IMAGE', { fileSize: getFileSize(mediaPath) });
+      
+      const captionMaxLength = 1024; // Telegram caption limit
+      const imageCaption = caption.length <= captionMaxLength ? caption : '';
+      
+      await bot.sendPhoto(chatId, fs.createReadStream(mediaPath), {
+        caption: imageCaption,
+        parse_mode: 'HTML',
         reply_markup: keyboard
       });
       
       // Send caption separately if it's too long
-      if (caption.length > 1024) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+      if (caption.length > captionMaxLength) {
+        await bot.sendMessage(chatId, `📝 <b>Caption:</b>\n\n${caption}`, { 
+          parse_mode: 'HTML',
+          disable_web_page_preview: true 
+        });
       }
     }
     
-    console.log('✅ Instagram content sent successfully');
+    // Attempt to clean up temp files
+    cleanupMediaFiles(mediaPath);
+    
+    stepLogger.success('INSTAGRAM_HANDLER_COMPLETE', { chatId });
   } catch (error) {
-    console.error(`❌ Instagram handler error: ${error.message}`);
+    stepLogger.error('INSTAGRAM_HANDLER_ERROR', { 
+      chatId, 
+      url: url.substring(0, 50),
+      error: error.message 
+    });
+    
+    // Send a fallback message to the user
+    try {
+      await bot.sendMessage(
+        chatId,
+        `Sorry, I couldn't process this Instagram content properly.\n\nError: ${error.message}`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📱 Open Original Instagram Post', url: url }]
+            ]
+          }
+        }
+      );
+    } catch (msgError) {
+      stepLogger.error('INSTAGRAM_FALLBACK_FAILED', { chatId, error: msgError.message });
+    }
+    
     throw error;
+  }
+}
+
+/**
+ * Get file size in MB
+ * @param {string} filePath - Path to the file
+ * @returns {string} File size in MB
+ */
+function getFileSize(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return (stats.size / (1024 * 1024)).toFixed(2) + ' MB';
+  } catch (error) {
+    return 'unknown';
+  }
+}
+
+/**
+ * Clean up temporary media files
+ * @param {string|string[]} mediaPath - Path or array of paths to media files
+ */
+function cleanupMediaFiles(mediaPath) {
+  try {
+    if (Array.isArray(mediaPath)) {
+      mediaPath.forEach(path => {
+        if (fs.existsSync(path)) {
+          fs.unlinkSync(path);
+        }
+      });
+    } else if (mediaPath && fs.existsSync(mediaPath)) {
+      fs.unlinkSync(mediaPath);
+    }
+  } catch (error) {
+    stepLogger.warn('INSTAGRAM_CLEANUP_ERROR', { error: error.message });
   }
 }
 

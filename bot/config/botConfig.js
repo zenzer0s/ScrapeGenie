@@ -1,25 +1,12 @@
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-
-// Debug logging
-console.log("🔍 Bot configuration loading:");
-console.log(`• Current directory: ${__dirname}`);
-console.log(`• Project root: ${path.resolve(__dirname, '../..')}`);
-
-// Ensure required environment variables
-if (!process.env.BACKEND_URL) {
-  console.error("⚠️ BACKEND_URL is not set! Setting default value...");
-  process.env.BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
-  console.log(`• BACKEND_URL (default): ${process.env.BACKEND_URL}`);
-}
 
 // Configuration object
 const config = {
   token: process.env.TELEGRAM_BOT_TOKEN,
   backendUrl: process.env.BACKEND_URL || `http://0.0.0.0:${process.env.PORT || 8080}`,
   port: process.env.PORT || 8080,
-  useWebhook: process.env.USE_WEBHOOK === 'true',
-  publicUrl: process.env.PUBLIC_URL || '',
   
   // Redis configuration
   redis: {
@@ -37,23 +24,27 @@ const config = {
   }
 };
 
-// Ensure required directories exist
-const fs = require('fs');
-Object.values(config.paths).forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-    console.log(`✅ Created directory: ${dir}`);
-  }
-});
-
-// Validate configuration
+// Validate essential configuration
 if (!config.token) {
   console.error("❌ Telegram Bot Token not found! Check your .env file.");
   process.exit(1);
 }
 
-if (config.useWebhook && !config.publicUrl) {
-  console.warn("⚠️ USE_WEBHOOK is true but PUBLIC_URL is not set. Webhook setup may fail.");
-}
+// Create required directories
+Object.entries(config.paths).forEach(([name, dir]) => {
+  if (!fs.existsSync(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`✅ Created ${name} directory: ${dir}`);
+    } catch (error) {
+      console.error(`❌ Failed to create ${name} directory: ${error.message}`);
+    }
+  }
+});
+
+// Log configuration summary
+console.log("🔍 Bot configuration loaded:");
+console.log(`• API endpoint: ${config.backendUrl}`);
+console.log(`• Using polling mode`);
 
 module.exports = config;
