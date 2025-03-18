@@ -2,113 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const { extractUrls } = require('./utils/urlUtils');
 const { callScrapeApi } = require('./services/apiService');
-const { addLinkToQueue, getQueueStats } = require('./services/queueService');
 const { routeContent } = require('./handlers/contentRouter');
 const { createBatch, submitBatch } = require('./batch/batchProcessor');
 const stepLogger = require('./utils/stepLogger');
-const logger = require('./utils/consoleLogger');  // <-- FIXED: Import directly, not as a constructor
+const logger = require('./utils/consoleLogger');
 
 const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, '../downloads');
-
-/**
- * Handles messages containing URLs
- * @param {TelegramBot} bot - The Telegram bot instance
- * @param {object} msg - Telegram message object
- * @returns {Promise<void>}
- */
-async function handleUrlMessage(bot, msg) {
-  const url = extractUrl(msg.text);
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-
-  if (!url) return;
-
-  try {
-    // Send processing message
-    const processingMsg = await bot.sendMessage(chatId, "⏳ Processing your URL...");
-    
-    // Show typing animation
-    await bot.sendChatAction(chatId, 'typing');
-    
-    // Check if we should queue or process directly
-    const stats = await getQueueStats();
-    const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 2);
-    
-    if (shouldQueue) {
-      try {
-        // Update message to indicate queueing
-        await bot.editMessageText(
-          "🔍 Adding your link to the processing queue...", 
-          { chat_id: chatId, message_id: processingMsg.message_id }
-        );
-        
-        // Add to queue
-        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
-        
-        // Inform about queue position
-        await bot.sendMessage(
-          chatId, 
-          `📊 Your link is #${stats.waiting + 1} in queue and will be processed soon.`
-        );
-        return;
-      } catch (err) {
-        console.log("Queue error, falling back to direct processing:", err.message);
-      }
-    }
-    
-    // Direct processing
-    try {
-      await bot.editMessageText(
-        "⚙️ Processing your link...", 
-        { chat_id: chatId, message_id: processingMsg.message_id }
-      );
-      
-      const data = await callScrapeApi(url, userId);
-      await bot.deleteMessage(chatId, processingMsg.message_id);
-      await routeContent(bot, chatId, url, data);
-      
-    } catch (error) {
-      console.error("Processing error:", error.message);
-      
-      // Handle specific errors (e.g., Pinterest auth required) here
-      // ...
-      
-      // Generic error handling
-      await bot.editMessageText(
-        `❌ Error: ${error.message}`,
-        { chat_id: chatId, message_id: processingMsg.message_id }
-      );
-    }
-  } catch (error) {
-    console.error(`Critical error: ${error.message}`);
-    await bot.sendMessage(chatId, "❌ Sorry, something went wrong. Please try again later.");
-  }
-}
-
-/**
- * Handles queue status command
- * @param {TelegramBot} bot - The Telegram bot instance
- * @param {object} msg - Telegram message object
- * @returns {Promise<void>}
- */
-async function handleQueueCommand(bot, msg) {
-  try {
-    const stats = await getQueueStats();
-    
-    await bot.sendMessage(msg.chat.id, 
-      `📊 *Queue Status*\n\n` +
-      `• Waiting: ${stats.waiting}\n` +
-      `• Processing: ${stats.active}\n` +
-      `• Completed: ${stats.completed}\n` +
-      `• Failed: ${stats.failed}\n\n` +
-      `Total pending: ${stats.total}`,
-      { parse_mode: 'Markdown' }
-    );
-  } catch (error) {
-    console.error("Error handling queue command:", error);
-    await bot.sendMessage(msg.chat.id, "Sorry, I couldn't retrieve queue status.");
-  }
-}
 
 /**
  * Main message handler
@@ -142,7 +41,7 @@ async function handleMessage(bot, msg, groupProcessor) {
       return;
     }
     
-    // Multiple URLs - use batch processor immediately
+    // Multiple URLs - use batch processor
     if (urls.length > 1) {
       stepLogger.info('MULTIPLE_URLS_DETECTED', {
         chatId,
@@ -157,7 +56,7 @@ async function handleMessage(bot, msg, groupProcessor) {
       return;
     }
     
-    // Single URL - process as usual
+    // Single URL - process directly
     const url = urls[0];
     stepLogger.info('SINGLE_URL_DETECTED', {
       chatId,
@@ -170,43 +69,9 @@ async function handleMessage(bot, msg, groupProcessor) {
     // Show typing animation
     await bot.sendChatAction(chatId, 'typing');
     
-    // Check if we should queue or process directly
-    const stats = await getQueueStats();
-    const shouldQueue = stats.status === 'enabled' && (stats.waiting > 0 || stats.active >= 1);
+    // Process URL directly
+    await processUrlDirectly(bot, chatId, url, userId, processingMsg.message_id);
     
-    if (shouldQueue) {
-      try {
-        // Update message to indicate queueing
-        await bot.editMessageText(
-          "🔍 Adding your link to the processing queue...", 
-          { chat_id: chatId, message_id: processingMsg.message_id }
-        );
-        
-        // Add to queue
-        await addLinkToQueue(url, chatId, userId, processingMsg.message_id);
-        
-        // Inform about queue position
-        await bot.editMessageText(
-          `📊 Your link is #${stats.waiting + 1} in queue and will be processed soon.`,
-          { chat_id: chatId, message_id: processingMsg.message_id }
-        );
-        
-        stepLogger.info('URL_QUEUED', {
-          chatId,
-          queuePosition: stats.waiting + 1
-        });
-      } catch (err) {
-        stepLogger.error('QUEUE_ERROR_FALLBACK', { 
-          error: err.message,
-          chatId
-        });
-        // Fallback to direct processing
-        await processUrlDirectly(bot, chatId, url, userId, processingMsg.message_id);
-      }
-    } else {
-      // Process directly
-      await processUrlDirectly(bot, chatId, url, userId, processingMsg.message_id);
-    }
   } catch (error) {
     stepLogger.error('MESSAGE_HANDLER_ERROR', { 
       chatId,
@@ -217,7 +82,7 @@ async function handleMessage(bot, msg, groupProcessor) {
 }
 
 /**
- * Process a URL directly without queueing
+ * Process a URL directly
  * @param {TelegramBot} bot - The Telegram bot instance
  * @param {string|number} chatId - Chat ID
  * @param {string} url - URL to process
@@ -238,7 +103,16 @@ async function processUrlDirectly(bot, chatId, url, userId, messageId) {
     });
     
     const data = await callScrapeApi(url, userId);
-    await bot.deleteMessage(chatId, messageId);
+    
+    // Delete the processing message
+    try {
+      await bot.deleteMessage(chatId, messageId);
+    } catch (err) {
+      // Ignore deletion errors
+      stepLogger.debug('DELETE_MESSAGE_FAILED', { chatId, messageId, error: err.message });
+    }
+    
+    // Route content to appropriate handler
     await routeContent(bot, chatId, url, data);
     
     stepLogger.success('URL_PROCESSED', {
@@ -253,15 +127,36 @@ async function processUrlDirectly(bot, chatId, url, userId, messageId) {
     });
     
     // Update the processing message with the error
-    await bot.editMessageText(
-      `❌ Error: ${error.message}`,
-      { chat_id: chatId, message_id: messageId }
-    );
+    try {
+      await bot.editMessageText(
+        `❌ Error: ${error.message}`,
+        { chat_id: chatId, message_id: messageId }
+      );
+    } catch (err) {
+      // If editing fails, try sending a new message
+      await bot.sendMessage(chatId, `❌ Error: ${error.message}`);
+    }
   }
+}
+
+/**
+ * Handles queue status command (compatibility function)
+ * @param {TelegramBot} bot - The Telegram bot instance
+ * @param {object} msg - Telegram message object
+ * @returns {Promise<void>}
+ */
+async function handleQueueCommand(bot, msg) {
+  const chatId = msg.chat.id;
+  
+  await bot.sendMessage(chatId, 
+    `📊 *Queue Status*\n\n` +
+    `Direct processing enabled - no queue is being used.`,
+    { parse_mode: 'Markdown' }
+  );
 }
 
 module.exports = { 
   handleMessage,
-  handleUrlMessage,
-  handleQueueCommand
+  handleQueueCommand,
+  processUrlDirectly
 };
