@@ -15,7 +15,7 @@ async function handleInstagram(bot, chatId, url, data) {
     stepLogger.info('INSTAGRAM_HANDLER_START', { chatId, url: url.substring(0, 50) });
     
     const mediaPath = data.mediaPath;
-    const caption = cleanupInstagramText(data.caption || '');
+    const caption = data.caption ? cleanupInstagramText(data.caption) : '';
     const isVideo = data.is_video || false;
     const isCarousel = data.is_carousel || false;
     
@@ -78,24 +78,34 @@ async function handleInstagram(bot, chatId, url, data) {
       if (caption && caption.trim().length > 0) {
         const captionMaxLength = 4000; // Telegram limit
         
-        if (caption.length <= captionMaxLength) {
-          await bot.sendMessage(chatId, caption, { 
+        // Add emoji indicator and preserve format better
+        const formattedCaption = `📝 <b>Caption:</b>\n\n${caption}`;
+        
+        if (formattedCaption.length <= captionMaxLength) {
+          await bot.sendMessage(chatId, formattedCaption, { 
             parse_mode: 'HTML', 
-            reply_markup: keyboard 
+            reply_markup: keyboard,
+            disable_web_page_preview: true // Prevent URL previews in captions
           });
         } else {
           // Split long captions
-          const parts = Math.ceil(caption.length / captionMaxLength);
+          const parts = Math.ceil(formattedCaption.length / captionMaxLength);
           
           for (let i = 0; i < parts; i++) {
-            const part = caption.substring(i * captionMaxLength, (i + 1) * captionMaxLength);
+            const part = formattedCaption.substring(i * captionMaxLength, (i + 1) * captionMaxLength);
+            const prefix = i > 0 ? '📝 <b>Caption (continued):</b>\n\n' : '';
             
             // Only add keyboard to the last part
-            const options = (i === parts - 1) ? 
-              { parse_mode: 'HTML', reply_markup: keyboard } : 
-              { parse_mode: 'HTML' };
+            const options = {
+              parse_mode: 'HTML',
+              disable_web_page_preview: true
+            };
+            
+            if (i === parts - 1) {
+              options.reply_markup = keyboard;
+            }
               
-            await bot.sendMessage(chatId, part, options);
+            await bot.sendMessage(chatId, prefix + part, options);
           }
         }
       } else {
@@ -115,16 +125,20 @@ async function handleInstagram(bot, chatId, url, data) {
       stepLogger.info('INSTAGRAM_SEND_VIDEO', { fileSize: getFileSize(mediaPath) });
       
       const captionMaxLength = 1024; // Telegram caption limit
+      const videoCaption = caption.length <= captionMaxLength ? caption : '';
       
       await bot.sendVideo(chatId, fs.createReadStream(mediaPath), {
-        caption: caption.length <= captionMaxLength ? caption : '',
+        caption: videoCaption,
         parse_mode: 'HTML',
         reply_markup: keyboard
       });
       
       // Send caption separately if it's too long
       if (caption.length > captionMaxLength) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+        await bot.sendMessage(chatId, `📝 <b>Caption:</b>\n\n${caption}`, { 
+          parse_mode: 'HTML',
+          disable_web_page_preview: true 
+        });
       }
       
     } else {
@@ -137,16 +151,20 @@ async function handleInstagram(bot, chatId, url, data) {
       stepLogger.info('INSTAGRAM_SEND_IMAGE', { fileSize: getFileSize(mediaPath) });
       
       const captionMaxLength = 1024; // Telegram caption limit
+      const imageCaption = caption.length <= captionMaxLength ? caption : '';
       
       await bot.sendPhoto(chatId, fs.createReadStream(mediaPath), {
-        caption: caption.length <= captionMaxLength ? caption : '',
+        caption: imageCaption,
         parse_mode: 'HTML',
         reply_markup: keyboard
       });
       
       // Send caption separately if it's too long
       if (caption.length > captionMaxLength) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'HTML' });
+        await bot.sendMessage(chatId, `📝 <b>Caption:</b>\n\n${caption}`, { 
+          parse_mode: 'HTML',
+          disable_web_page_preview: true 
+        });
       }
     }
     
