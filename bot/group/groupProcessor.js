@@ -1,273 +1,83 @@
-const { extractUrls } = require('../utils/urlUtils');
-const { createBatch, submitBatch } = require('../batch/batchProcessor');
 const stepLogger = require('../utils/stepLogger');
-const fs = require('fs');
-const path = require('path');
 
 /**
- * Process links from a designated Telegram group
+ * GroupProcessor handles bot functionality in group chats
  */
 class GroupProcessor {
-  constructor(bot) {
+  /**
+   * Create a new GroupProcessor
+   * @param {object} bot - Telegram bot instance
+   * @param {object} config - Configuration object
+   */
+  constructor(bot, config) {
     this.bot = bot;
-    this.groupInfo = null;
-    this.isProcessing = false;
+    this.config = config || {};
+    this.allowedGroups = this.config.allowedGroups || [];
+    
+    stepLogger.info('GROUP_PROCESSOR_INIT', { 
+      groupsEnabled: this.allowedGroups.length > 0 
+    });
   }
 
   /**
    * Initialize the group processor
-   * @returns {Promise<boolean>} - Whether initialization succeeded
+   * @returns {Promise<void>}
    */
   async initialize() {
-    try {
-      stepLogger.info('GROUP_INIT_START');
-      
-      // Load group info from config file instead of searching by name
-      await this.loadGroupInfo();
-      
-      if (this.groupInfo) {
-        stepLogger.info('GROUP_FOUND', { 
-          groupId: this.groupInfo.id,
-          title: this.groupInfo.title
-        });
-        return true;
-      } else {
-        stepLogger.warn('GROUP_NOT_FOUND');
-        return false;
-      }
-    } catch (error) {
-      stepLogger.error('GROUP_INIT_FAILED', { error: error.message });
-      return false;
-    }
-  }
-
-  async loadGroupInfo() {
-    const configFile = path.join(__dirname, '../../data/groupConfig.json');
-    
-    if (fs.existsSync(configFile)) {
-      try {
-        const groupData = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-        
-        // Verify group data
-        if (groupData && groupData.id) {
-          // Try to get current group info to ensure it still exists
-          const currentGroupInfo = await this.bot.getChat(groupData.id).catch(() => null);
-          
-          if (currentGroupInfo) {
-            this.groupInfo = {
-              id: currentGroupInfo.id,
-              title: currentGroupInfo.title,
-              type: currentGroupInfo.type
-            };
-            
-            return true;
-          }
-        }
-      } catch (error) {
-        stepLogger.error('GROUP_LOAD_CONFIG_FAILED', { error: error.message });
-      }
-    }
-    
-    this.groupInfo = null;
-    return false;
-  }
-
-  /**
-   * Process unprocessed messages in the group
-   * @returns {Promise<number>} - Number of messages processed
-   */
-  async processUnprocessedMessages() {
-    if (!this.groupInfo || this.isProcessing) {
-      return 0;
-    }
-    
-    this.isProcessing = true;
-    
-    try {
-      stepLogger.info('GROUP_PROCESS_START', { groupId: this.groupInfo.id });
-      
-      // Get recent message history
-      const messages = await this.getGroupMessages();
-      
-      // Filter for unprocessed messages with links
-      const unprocessedMessages = messages.filter(msg => 
-        !msg.reactions || // No reactions yet
-        !msg.reactions.some(r => r.emoji === '✅') // No check mark reaction
-      );
-      
-      // Extract all URLs
-      const allLinks = [];
-      const messageIds = [];
-      
-      for (const msg of unprocessedMessages) {
-        if (msg.text) {
-          const urls = extractUrls(msg.text);
-          
-          if (urls.length > 0) {
-            allLinks.push(...urls);
-            messageIds.push(msg.message_id);
-          }
-        }
-      }
-      
-      stepLogger.info('GROUP_LINKS_FOUND', { 
-        count: allLinks.length,
-        messageCount: messageIds.length
-      });
-      
-      // If no links, we're done
-      if (allLinks.length === 0) {
-        this.isProcessing = false;
-        return 0;
-      }
-      
-      // Notify in the group that processing is starting
-      await this.bot.sendMessage(
-        this.groupInfo.id,
-        `🔍 Found ${allLinks.length} unprocessed links in ${messageIds.length} messages.\nStarting batch processing...`
-      );
-      
-      // Create user ID for group processing (using group ID)
-      const groupUserId = Math.abs(this.groupInfo.id); 
-      
-      // Create and process batch
-      const batchId = await createBatch(allLinks, this.groupInfo.id, groupUserId);
-      await submitBatch(batchId, this.bot);
-      
-      // Mark all processed messages
-      for (const messageId of messageIds) {
-        await this.markMessageAsProcessed(messageId);
-      }
-      
-      // Final count
-      stepLogger.info('GROUP_PROCESS_COMPLETE', { 
-        processedCount: allLinks.length
-      });
-      
-      this.isProcessing = false;
-      return allLinks.length;
-      
-    } catch (error) {
-      stepLogger.error('GROUP_PROCESS_FAILED', { error: error.message });
-      
-      // Try to notify in group
-      try {
-        await this.bot.sendMessage(
-          this.groupInfo.id,
-          `❌ Error processing group messages: ${error.message}`
-        );
-      } catch (err) {
-        // Ignore notification errors
-      }
-      
-      this.isProcessing = false;
-      return 0;
-    }
-  }
-
-  /**
-   * Get messages from the group
-   * This uses alternative methods since getChatHistory isn't available
-   * @param {number} limit - Maximum number of messages to retrieve
-   * @returns {Promise<Array>} - Array of message objects
-   */
-  async getGroupMessages(limit = 100) {
-    try {
-      // Unfortunately, Telegram Bot API doesn't provide a way to get message history
-      // We'll need to use a different approach - only process new messages as they come in
-      
-      stepLogger.info('GROUP_GET_MESSAGES_APPROACH', { 
-        method: 'forward_based',
-        info: 'Using forwarded message collection'  
-      });
-      
-      // Return empty array - we'll collect messages as they come in instead
-      return [];
-    } catch (error) {
-      stepLogger.error('GROUP_GET_MESSAGES_FAILED', { 
-        error: error.message 
-      });
-      return [];
-    }
-  }
-
-  /**
-   * Mark a message as processed
-   * @param {number} messageId - Message ID to mark
-   */
-  async markMessageAsProcessed(messageId) {
-    try {
-      // Add a reaction to the message
-      await this.bot.setMessageReaction(
-        this.groupInfo.id,
-        messageId,
-        ['✅'] // Checkmark emoji
-      );
-      
-    } catch (error) {
-      // Try commenting instead if reactions fail
-      try {
-        await this.bot.sendMessage(
-          this.groupInfo.id,
-          "✅ Processed",
-          { reply_to_message_id: messageId }
-        );
-      } catch (err) {
-        stepLogger.warn('GROUP_MARK_FAILED', { 
-          messageId,
-          error: err.message 
-        });
-      }
-    }
-  }
-
-  /**
-   * Handle a new message sent to the group
-   * @param {Object} msg - Message object
-   * @returns {boolean} - Whether the message was handled
-   */
-  async handleGroupMessage(msg) {
-    // Check if this message is from our tracked group
-    if (!this.groupInfo || msg.chat.id !== this.groupInfo.id) {
-      return false;
-    }
-    
-    // If we're already processing, just mark for later processing
-    if (this.isProcessing) {
-      stepLogger.info('GROUP_MESSAGE_QUEUED', { 
-        chatId: msg.chat.id, 
-        messageId: msg.message_id 
-      });
-      return true;
-    }
-    
-    // Extract URLs from the message
-    const urls = extractUrls(msg.text || '');
-    
-    // If no URLs, ignore
-    if (urls.length === 0) {
-      return false;
-    }
-    
-    stepLogger.info('GROUP_NEW_MESSAGE', { 
-      chatId: msg.chat.id, 
-      messageId: msg.message_id,
-      urlCount: urls.length 
+    stepLogger.info('GROUP_PROCESSOR_INITIALIZE_START', {
+      groupCount: this.allowedGroups.length
     });
     
-    // Let's process all unprocessed messages including this one
-    await this.processUnprocessedMessages();
+    // If there are allowed groups, we could set up listeners or load data here
+    if (this.allowedGroups.length > 0) {
+      // For each group, we might want to load previous state, update group info, etc.
+      for (const groupId of this.allowedGroups) {
+        try {
+          // Just log for now - could do more initialization per group
+          stepLogger.debug('GROUP_INITIALIZE', { groupId });
+        } catch (error) {
+          stepLogger.warn('GROUP_INITIALIZE_ERROR', { 
+            groupId, 
+            error: error.message 
+          });
+        }
+      }
+    }
+    
+    stepLogger.success('GROUP_PROCESSOR_INITIALIZE_COMPLETE', {
+      groupCount: this.allowedGroups.length
+    });
+    
     return true;
   }
 
   /**
-   * Check if a chat ID belongs to our group
-   * @param {number} chatId - Chat ID to check
-   * @returns {boolean} - Whether the chat is our group
+   * Check if the chat is a monitored group chat
+   * @param {number|string} chatId - Chat ID to check
+   * @returns {boolean} True if this is a group we're monitoring
    */
   isGroupChat(chatId) {
-    return this.groupInfo && this.groupInfo.id === chatId;
+    return this.allowedGroups.includes(chatId.toString());
+  }
+
+  /**
+   * Handle a message in a group chat
+   * @param {object} msg - Telegram message
+   * @returns {Promise<void>}
+   */
+  async handleGroupMessage(msg) {
+    const chatId = msg.chat.id;
+    
+    stepLogger.info('GROUP_MESSAGE_RECEIVED', { 
+      chatId,
+      userId: msg.from.id,
+      username: msg.from.username || 'unknown'
+    });
+    
+    // For now, we just log the message
+    // Group features can be implemented later
   }
 }
 
+// Export the class directly
 module.exports = GroupProcessor;
