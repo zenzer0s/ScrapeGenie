@@ -130,7 +130,6 @@ const { handleMessage } = require('./messageHandler');
 const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/callbackHandler');
 const { checkBackendStatus } = require('./utils/statusUtils');
 const { setupMaintenanceTasks } = require('./services/maintenanceService');
-const { initQueueProcessor } = require('./services/queueWorker');
 const queueService = require('./services/queueService');
 const GroupProcessor = require('./group/groupProcessor');
 
@@ -339,9 +338,8 @@ let groupProcessor;
 
 (async () => {
   try {
-    // Initialize the queue processor
-    await initQueueProcessor(bot);
-    logger.success("Queue processor initialized");
+    // No queue processor needed anymore
+    logger.info("Direct processing mode - no queue being used");
     
     // Initialize the group processor
     logger.processing("Initializing group processor...");
