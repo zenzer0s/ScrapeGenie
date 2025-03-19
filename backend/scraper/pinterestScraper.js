@@ -182,17 +182,10 @@ async function scrapePinterest(url, userId = 'default') {
       // Filter images
       const validImages = allPageImages
         .filter(img => {
-          // Skip video thumbnails
-          if (img.src.includes('/videos/thumbnails/')) return false;
-          
-          // Skip small images
-          const width = img.naturalWidth || img.width || 0;
-          const height = img.naturalHeight || img.height || 0;
-          if (width < config.minImageSize.width || height < config.minImageSize.height) return false;
-          
-          // Skip thumbnail directories
-          if (img.src.includes('/236x/') || img.src.includes('/75x/')) return false;
-          
+          const width = img.naturalWidth || img.width;
+          const height = img.naturalHeight || img.height;
+          // Allow smaller images, e.g. at least 100×100
+          if (width < 100 || height < 100) return false; 
           return true;
         })
         .map(img => ({
