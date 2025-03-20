@@ -5,7 +5,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 // Configuration object
 const config = {
   token: process.env.TELEGRAM_BOT_TOKEN,
-  backendUrl: process.env.BACKEND_URL || `http://0.0.0.0:${process.env.PORT || 8080}`,
+  backendUrl: process.env.BACKEND_URL || 'http://localhost:8080',
   port: process.env.PORT || 8080,
   
   // Redis configuration
