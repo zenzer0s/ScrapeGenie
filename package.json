@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@shadcn/ui": "^0.0.4",
     "axios": "^1.8.1",
     "axios-retry": "^4.5.0",
     "cors": "^2.8.5",
@@ -11,6 +12,7 @@
     "os": "^0.1.2",
     "path": "^0.12.7",
     "puppeteer": "^24.3.0",
+    "tailwindcss": "^4.0.14",
     "uuid": "^11.1.0",
     "winston": "^3.17.0"
   }
