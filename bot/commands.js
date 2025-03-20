@@ -253,72 +253,62 @@ async function usageCommand(bot, msg) {
 // Pinterest login command - improved with proper logging and error handling
 async function pinterestLoginCommand(bot, msg) {
   const chatId = msg.chat.id;
-  const userId = msg.from.id.toString();
+  const userId = msg.from?.id?.toString() || chatId.toString();
 
   stepLogger.info('CMD_PINTEREST_LOGIN', { chatId });
 
   try {
-    // First check if backend is available
-    if (!await checkBackendAvailable(bot, chatId)) {
-      return { userMessageId: msg.message_id };
-    }
-    
-    // Check if user is already logged in
+    // First, check if already logged in
     const statusResponse = await axiosInstance.get(`/api/auth/status`, {
       params: { userId }
     });
 
-    if (statusResponse.data.success && statusResponse.data.isLoggedIn) {
-      const sentMessage = await bot.sendMessage(chatId,
-        '✅ *You are already logged in to Pinterest!*\n\n' +
-        'You can now send Pinterest links and I\'ll download them using your account.\n\n' +
-        'To log out, use /pinterest_logout',
+    // If already logged in, send a different message
+    if (statusResponse.data.isLoggedIn) {
+      const sentMessage = await bot.sendMessage(chatId, 
+        "✅ *You're already logged in to Pinterest!*\n\nYou can use Pinterest scraping features right away.", 
         { parse_mode: 'Markdown' }
       );
+      
       return { sentMessage, userMessageId: msg.message_id };
     }
 
-    // Generate login token
-    const tokenResponse = await axiosInstance.post(`/auth/generate-token`, {
-      userId
-    });
+    // If not logged in, continue with token generation
+    const tokenResponse = await axiosInstance.post('/api/auth/generate-token', { userId });
 
-    if (!tokenResponse.data.success) {
-      throw new Error(tokenResponse.data.error || 'Failed to generate login link');
-    }
-
+    // Create login URL message with proper escaping for Markdown
     const loginUrl = tokenResponse.data.loginUrl;
+    const escapedUrl = loginUrl.replace(/_/g, '\\_').replace(/\*/g, '\\*').replace(/\`/g, '\\`');
 
-    // Send detailed instructions
-    const instructionsMessage = await bot.sendMessage(chatId,
-      '🔐 *Pinterest Authentication*\n\n' +
-      'To download high-quality Pinterest content and access private pins, you need to authenticate.\n\n' +
-      '*Instructions:*\n' +
-      '1️⃣ Click the login link in the next message\n' +
-      '2️⃣ Enter your Pinterest login details on the official Pinterest page\n' +
-      '3️⃣ After successful login, return to this chat\n\n' +
-      '⚠️ This link expires in 15 minutes\n\n' +
-      '_Your credentials are entered directly on Pinterest\'s official website and are never stored by this bot._',
-      { parse_mode: 'Markdown' }
-    );
-    
-    // Send the login URL separately (Telegram will make it clickable automatically)
-    const loginUrlMessage = await bot.sendMessage(chatId, loginUrl, {
+    const message = 
+      `🔐 *Pinterest Login*\n\n` +
+      `Click the button below to log in to your Pinterest account.\n\n` +
+      `This login is required for Pinterest scraping.\n`;
+
+    // Send message with inline button instead of markdown link
+    const sentMessage = await bot.sendMessage(chatId, message, {
+      parse_mode: 'Markdown',
       reply_markup: {
         inline_keyboard: [
-          [
-            { text: '🔍 Check Login Status', callback_data: 'pinterest_status' },
-            { text: '🏠 Home', callback_data: 'start' }
-          ]
+          [{ text: '🔑 Login to Pinterest', url: loginUrl }]
         ]
       }
     });
-    
-    stepLogger.success('PINTEREST_LOGIN_LINK_SENT', { chatId });
-    return { sentMessages: [instructionsMessage, loginUrlMessage], userMessageId: msg.message_id };
-    
+
+    return { sentMessage, userMessageId: msg.message_id };
+
   } catch (error) {
-    return handleCommandError(bot, chatId, error, 'pinterest_login', msg.message_id);
+    stepLogger.error('PINTEREST_LOGIN_ERROR', { chatId, error: error.message });
+
+    const errorMessage = 
+      `❌ *Pinterest Login Error*\n\n` + 
+      `Sorry, we encountered a problem. Please try again later.`;
+
+    const sentMessage = await bot.sendMessage(chatId, errorMessage, { 
+      parse_mode: 'Markdown' 
+    });
+
+    return { sentMessage, userMessageId: msg.message_id };
   }
 }
 
