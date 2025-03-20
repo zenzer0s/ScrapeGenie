@@ -10,7 +10,7 @@ env:
   DOCKER_HUB_REPO: "${{ secrets.DOCKER_USERNAME }}/scrapegenie"
   VM_NAME: "${{ secrets.VM_NAME }}"
   VM_ZONE: "${{ secrets.VM_ZONE }}"
-  SERVER_IP: "34.47.149.250"  # Your VM's IP address
+  SERVER_IP: "${{ secrets.SERVER_IP }}"  # Changed to use secrets
 
 jobs:
   deploy:
