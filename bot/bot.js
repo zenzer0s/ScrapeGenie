@@ -116,15 +116,12 @@ const stepLogger = require('./utils/stepLogger');
 
 // Import commands and handlers
 const { 
-  startCommand, 
+  startCommand,
   helpCommand, 
-  statusCommand, 
-  usageCommand,
+  statusCommand,
   pinterestLoginCommand,
   pinterestLogoutCommand,
-  pinterestStatusCommand,
-  addAdminCommand,
-  removeAdminCommand
+  pinterestStatusCommand
 } = require('./commands');
 const { handleMessage } = require('./messageHandler');
 const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/callbackHandler');
@@ -207,7 +204,7 @@ bot.onText(/\/status/, async (msg) => {
 });
 
 bot.onText(/\/usage/, async (msg) => {
-  const { sentMessage, userMessageId } = await usageCommand(bot, msg);
+  const { sentMessage, userMessageId } = await commands.usageCommand(bot, msg);
   deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
@@ -284,7 +281,7 @@ bot.onText(/\/collect/, async (msg) => {
 // Admin commands for status notifications
 bot.onText(/\/addadmin/, async (msg) => {
   try {
-    const { sentMessage, userMessageId } = await addAdminCommand(bot, msg);
+    const { sentMessage, userMessageId } = await commands.addAdminCommand(bot, msg);
     deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
     deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
   } catch (error) {
@@ -294,7 +291,7 @@ bot.onText(/\/addadmin/, async (msg) => {
 
 bot.onText(/\/removeadmin/, async (msg) => {
   try {
-    const { sentMessage, userMessageId } = await removeAdminCommand(bot, msg);
+    const { sentMessage, userMessageId } = await commands.removeAdminCommand(bot, msg);
     deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
     deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
   } catch (error) {
