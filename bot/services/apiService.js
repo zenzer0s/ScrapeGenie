@@ -4,8 +4,8 @@ const stepLogger = require('../utils/stepLogger');
 
 // Create axios instance with defaults
 const api = axios.create({
-  baseURL: config.backendUrl,
-  timeout: 45000, // Reduced from 60s to 45s
+  baseURL: `${config.backendUrl}/api`,  // Add /api here
+  timeout: 30000, // Reduced from 60s to 30s
   headers: {
     'Content-Type': 'application/json',
     'User-Agent': 'ScrapeGenie-Bot/1.0'

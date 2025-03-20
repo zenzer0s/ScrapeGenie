@@ -264,7 +264,7 @@ async function pinterestLoginCommand(bot, msg) {
     }
     
     // Check if user is already logged in
-    const statusResponse = await axiosInstance.get(`/auth/status`, {
+    const statusResponse = await axiosInstance.get(`/api/auth/status`, {
       params: { userId }
     });
 
@@ -379,7 +379,7 @@ async function pinterestStatusCommand(bot, msg) {
     }
 
     // Check login status
-    const response = await axiosInstance.get(`/auth/status`, {
+    const response = await axiosInstance.get(`/api/auth/status`, {
       params: { userId }
     });
 
