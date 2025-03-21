@@ -55,6 +55,22 @@ function detectContentType(url, dataType = null) {
  */
 async function routeContent(bot, chatId, url, data) {
   try {
+    // Add detailed debugging for the received data
+    stepLogger.debug('CONTENT_ROUTING_DATA', {
+      dataPresent: !!data,
+      dataKeys: data ? Object.keys(data) : 'null',
+      mediaPathPresent: data && !!data.mediaPath,
+      dataType: typeof data
+    });
+    
+    // Check if we're dealing with a nested data structure
+    if (data && data.success && data.data) {
+      stepLogger.debug('EXTRACTING_NESTED_DATA', {
+        nestedKeys: Object.keys(data.data)
+      });
+      data = data.data; // Extract the nested data
+    }
+    
     // Detect content type
     const contentType = detectContentType(url, data.type);
     

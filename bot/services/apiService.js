@@ -24,6 +24,20 @@ async function callScrapeApi(url, userId) {
       url,
       userId
     });
+    
+    // Add debug logging to check response structure
+    stepLogger.debug('API_RESPONSE_STRUCTURE', {
+      hasData: !!response.data,
+      topLevelKeys: Object.keys(response.data),
+      hasNestedData: response.data && !!response.data.data,
+      nestedKeys: response.data && response.data.data ? Object.keys(response.data.data) : 'none'
+    });
+    
+    // Return the nested data object to avoid accessing issues downstream
+    if (response.data && response.data.success && response.data.data) {
+      return response.data.data; // Extract the nested data
+    }
+    
     return response.data;
   } catch (error) {
     stepLogger.error('SCRAPE_API_ERROR', {

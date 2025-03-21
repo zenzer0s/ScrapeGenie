@@ -14,6 +14,30 @@ async function handleInstagram(bot, chatId, url, data) {
   try {
     stepLogger.info('INSTAGRAM_HANDLER_START', { chatId, url: url.substring(0, 50) });
     
+    // Add detailed debugging for the received data
+    stepLogger.debug('INSTAGRAM_HANDLER_DATA', {
+      dataPresent: !!data,
+      dataType: typeof data,
+      dataKeys: data ? Object.keys(data) : 'null'
+    });
+    
+    // Check if we're dealing with a nested data structure
+    if (data && data.success && data.data) {
+      stepLogger.debug('INSTAGRAM_HANDLER_NESTED_DATA', {
+        nestedKeys: Object.keys(data.data)
+      });
+      data = data.data; // Extract the nested data
+    }
+    
+    // Now check for mediaPath in the correct data object
+    if (!data || !data.mediaPath) {
+      stepLogger.error('INSTAGRAM_MEDIA_PATH_MISSING', { 
+        url: url.substring(0, 50),
+        dataKeys: data ? Object.keys(data) : 'null'
+      });
+      throw new Error('Media path is missing from Instagram response');
+    }
+    
     const mediaPath = data.mediaPath;
     const caption = data.caption ? cleanupInstagramText(data.caption) : '';
     const isVideo = data.is_video || false;
