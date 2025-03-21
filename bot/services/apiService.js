@@ -20,9 +20,10 @@ const api = axios.create({
  */
 async function callScrapeApi(url, userId) {
   try {
+    // Convert userId to string
     const response = await api.post('/api/scrape', {
       url,
-      userId
+      userId: String(userId)  // Convert to string
     });
     
     // Add debug logging to check response structure
