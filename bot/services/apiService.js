@@ -20,24 +20,10 @@ const api = axios.create({
  */
 async function callScrapeApi(url, userId) {
   try {
-    // Convert userId to string
     const response = await api.post('/api/scrape', {
       url,
-      userId: String(userId)  // Convert to string
+      userId
     });
-    
-    // Add debug logging to check response structure
-    stepLogger.debug('API_RESPONSE_STRUCTURE', {
-      hasData: !!response.data,
-      topLevelKeys: Object.keys(response.data),
-      hasNestedData: response.data && !!response.data.data,
-      nestedKeys: response.data && response.data.data ? Object.keys(response.data.data) : 'none'
-    });
-    
-    // Return the nested data object to avoid accessing issues downstream
-    if (response.data && response.data.success && response.data.data) {
-      return response.data.data; // Extract the nested data
-    }
     
     return response.data;
   } catch (error) {
@@ -46,7 +32,17 @@ async function callScrapeApi(url, userId) {
       error: error.message,
       status: error.response?.status
     });
-    throw error;
+    
+    // Create a more informative error object
+    const enhancedError = new Error(
+      error.response?.data?.error || error.message
+    );
+    
+    // Add status and original response data
+    enhancedError.status = error.response?.status;
+    enhancedError.data = error.response?.data;
+    
+    throw enhancedError;
   }
 }
 
