@@ -1,5 +1,3 @@
-Here's the updated version of your ScrapeGenie README with the requested changes:  
-
 ---
 
 # **🧞 ScrapeGenie - Intelligent URL Scraper & Telegram Bot**  
