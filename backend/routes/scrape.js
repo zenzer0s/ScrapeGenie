@@ -22,7 +22,17 @@ router.post("/", async (req, res) => {
         
         // Special handling for Pinterest URLs to handle authentication
         if (pinterestPattern.test(url)) {
+            console.log(`⏱️ Starting Pinterest scrape for: ${url}`);
             result = await scrapePinterest(url, userId);
+            
+            // Special handling for login required
+            if (!result.success && result.loginRequired) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Pinterest login required',
+                    loginRequired: true
+                });
+            }
             
             if (!result.success) {
                 // Check if this is an authentication error
