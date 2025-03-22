@@ -27,12 +27,15 @@ async function helpCommand(bot, msg) {
           [
             { text: '📊 Usage', callback_data: 'usage' },
             { text: '🔍 Pinterest Status', callback_data: 'pinterest_status' }
-            
           ],
           // Row 3: Pinterest Logout + Pinterest Status
           [
             { text: '🔐 Pinterest Login', callback_data: 'pinterest_login' },
             { text: '🔓 Pinterest Logout', callback_data: 'pinterest_logout' }
+          ],
+          // Row 4: Customize Settings
+          [
+            { text: '⚙️ Customize Settings', callback_data: 'open_settings' }
           ]
         ]
       }
