@@ -55,6 +55,22 @@ function detectContentType(url, dataType = null) {
  */
 async function routeContent(bot, chatId, url, data) {
   try {
+    // Add detailed debugging for the received data
+    stepLogger.debug('CONTENT_ROUTING_DATA', {
+      dataPresent: !!data,
+      dataKeys: data ? Object.keys(data) : 'null',
+      mediaPathPresent: data && !!data.mediaPath,
+      dataType: typeof data
+    });
+    
+    // Check if we're dealing with a nested data structure
+    if (data && data.success && data.data) {
+      stepLogger.debug('EXTRACTING_NESTED_DATA', {
+        nestedKeys: Object.keys(data.data)
+      });
+      data = data.data; // Extract the nested data
+    }
+    
     // Detect content type
     const contentType = detectContentType(url, data.type);
     
@@ -103,8 +119,44 @@ async function routeContent(bot, chatId, url, data) {
       }
     } catch (fallbackError) {
       // If fallback also fails, throw the original error
-      throw error;
+      await handleError(bot, chatId, url, error);
     }
+  }
+}
+
+/**
+ * Handles errors and sends appropriate messages to the user
+ * @param {TelegramBot} bot - Telegram bot instance
+ * @param {number} chatId - Chat ID to send content to
+ * @param {string} url - Original URL
+ * @param {Error} error - Error object
+ * @returns {Promise<void>}
+ */
+async function handleError(bot, chatId, url, error) {
+  try {
+    stepLogger.error('DIRECT_PROCESSING_ERROR', { 
+      chatId, 
+      url, 
+      error: error.message,
+      status: error.status || 'unknown'
+    });
+    
+    let userMessage = 'Sorry, I couldn\'t process this content properly.';
+    
+    // Check for specific error types
+    if (error.status === 401) {
+      userMessage = '🔐 <b>Pinterest Login Required</b>\n\nTo access Pinterest content, you need to connect your Pinterest account first.\n\nUse the /pinterest_login command to get started.';
+    } else {
+      userMessage += `\n\nError: ${error.message}`;
+    }
+    
+    await bot.sendMessage(chatId, userMessage, { parse_mode: 'HTML' });
+  } catch (sendError) {
+    stepLogger.error('ERROR_HANDLING_FAILED', { 
+      chatId, 
+      originalError: error.message,
+      sendError: sendError.message 
+    });
   }
 }
 

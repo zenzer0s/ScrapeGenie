@@ -24,6 +24,7 @@ async function callScrapeApi(url, userId) {
       url,
       userId
     });
+    
     return response.data;
   } catch (error) {
     stepLogger.error('SCRAPE_API_ERROR', {
@@ -31,7 +32,17 @@ async function callScrapeApi(url, userId) {
       error: error.message,
       status: error.response?.status
     });
-    throw error;
+    
+    // Create a more informative error object
+    const enhancedError = new Error(
+      error.response?.data?.error || error.message
+    );
+    
+    // Add status and original response data
+    enhancedError.status = error.response?.status;
+    enhancedError.data = error.response?.data;
+    
+    throw enhancedError;
   }
 }
 

@@ -8,19 +8,18 @@ const formatTime = ms => (ms / 1000).toFixed(2) + 's';
 async function fetchYouTubeShort(url) {
     return new Promise((resolve, reject) => {
         const scriptPath = path.join(__dirname, "ytdlp.py");
-        const downloadDir = "/dev/shm/youtube_tmp";
+        const outputDir = "/dev/shm/youtube_tmp";
 
-        const startTime = Date.now();
-        console.log(`\n⏱️ Starting YouTube process for: ${url}`);
-        const pythonStartTime = Date.now();
+        // Ensure the output directory exists
+        if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir, { recursive: true });
+        }
 
-        console.log(`📥 Running yt-dlp for: ${url}`);
-
-        const command = `python3 "${scriptPath}" "${url}" "${downloadDir}"`;
+        const command = `python3 ${scriptPath} "${url}" "${outputDir}"`;
 
         exec(command, (error, stdout, stderr) => {
             console.log("✅ yt-dlp Raw Output:", stdout);
-            
+
             if (stderr) {
                 console.error("❌ yt-dlp Error Output:", stderr);
             }
@@ -29,9 +28,23 @@ async function fetchYouTubeShort(url) {
                 return reject(new Error(stderr || "Unknown yt-dlp error"));
             }
 
+            // Filter stdout to find the JSON line
             let output;
             try {
-                output = JSON.parse(stdout);
+                const jsonLine = stdout.split("\n").find(line => {
+                    try {
+                        JSON.parse(line); // Check if the line is valid JSON
+                        return true;
+                    } catch {
+                        return false;
+                    }
+                });
+
+                if (!jsonLine) {
+                    throw new Error("No JSON output found in yt-dlp response");
+                }
+
+                output = JSON.parse(jsonLine); // Parse the JSON line
                 if (output.error) return reject(new Error(output.error));
             } catch (parseError) {
                 return reject(new Error("Failed to parse yt-dlp output"));
@@ -39,6 +52,7 @@ async function fetchYouTubeShort(url) {
 
             resolve(output);
 
+            // Cleanup temporary files after 5 minutes
             setTimeout(() => {
                 try {
                     if (fs.existsSync(output.filepath)) {
@@ -58,7 +72,7 @@ function cleanupOldFiles(directory = "/dev/shm/youtube_tmp") {
     if (!fs.existsSync(directory)) return;
 
     const files = fs.readdirSync(directory);
-    const now = Date.now();
+    const now = Date.now(1);
     let deletedCount = 0;
 
     files.forEach(file => {

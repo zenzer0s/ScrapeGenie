@@ -84,24 +84,19 @@ async function scrapePinterest(url, userId = 'default') {
   const startTime = Date.now();
   console.log(`\n⏱️ Starting Pinterest scrape for: ${url}`);
   
-  if (typeof userId !== 'string') {
-    console.error('Invalid userId:', userId);
-    return { success: false, error: 'Invalid userId. Please provide a valid userId.' };
-  }
-
-  // Check if session exists for this user
+  // Convert userId to string if it's a number
+  userId = String(userId);
+  
+  // Session check
   console.log(`Looking for session file: ${sessionManager.getSessionPath(userId)}`);
   const session = sessionManager.getSession(userId);
   
-  if (!session || !session.cookies || session.cookies.length === 0) {
+  if (!session) {
     console.log(`No session file found for user ${userId}`);
     return { 
       success: false, 
-      error: 'No valid session found. Please log in to Pinterest first.',
-      errorCode: 'AUTH_REQUIRED',
-      requiresAuth: true,
-      service: 'pinterest',
-      userId: userId
+      error: 'Pinterest login required',
+      loginRequired: true  // Add this flag to make it easier to detect
     };
   }
   
