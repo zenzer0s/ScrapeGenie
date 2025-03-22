@@ -3,6 +3,7 @@ const startCommand = require('./general/startCommand');
 const helpCommand = require('./general/helpCommand');
 const statusCommand = require('./general/statusCommand');
 const usageCommand = require('./general/usageCommand');
+const { settingsCommand } = require('./general/settingsCommand');
 
 // Pinterest commands
 const pinterestLoginCommand = require('./pinterest/pinterestLoginCommand');
@@ -13,6 +14,10 @@ const pinterestStatusCommand = require('./pinterest/pinterestStatusCommand');
 const addAdminCommand = require('./admin/addAdminCommand');
 const removeAdminCommand = require('./admin/removeAdminCommand');
 
+// Handlers
+const { handleSettingsCallback } = require('../handlers/settingsHandler');
+const { handleCallbackQuery } = require('../handlers/callbackHandler');
+
 // Export all commands
 module.exports = {
   // General commands
@@ -20,6 +25,7 @@ module.exports = {
   helpCommand,
   statusCommand,
   usageCommand,
+  settingsCommand,
   
   // Pinterest commands
   pinterestLoginCommand,
@@ -28,5 +34,9 @@ module.exports = {
   
   // Admin commands
   addAdminCommand,
-  removeAdminCommand
+  removeAdminCommand,
+
+  // Handlers
+  handleSettingsCallback,
+  handleCallbackQuery,
 };
