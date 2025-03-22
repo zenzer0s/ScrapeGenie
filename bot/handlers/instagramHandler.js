@@ -24,8 +24,8 @@ async function handleInstagram(bot, chatId, url, data) {
 
     // Fetch user settings
     const userSettings = getUserSettings(chatId);
-    const sendMedia = userSettings.instagram.sendMedia; // If true: only media, if false: media+caption
-    const sendCaption = userSettings.instagram.sendCaption; // Should be the opposite of sendMedia
+    const sendMedia = userSettings.instagram.sendMedia; // Should always be true
+    const sendCaption = userSettings.instagram.sendCaption; // True for "Media + Caption", false for "Only Media"
 
     // Check if we're dealing with a nested data structure
     if (data && data.success && data.data) {
