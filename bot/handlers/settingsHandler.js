@@ -6,18 +6,19 @@ const stepLogger = require('../utils/stepLogger');
  * @param {TelegramBot} bot - Telegram bot instance
  * @param {number} chatId - Chat ID
  * @param {string} userId - User ID
- * @param {object} userSettings - User-specific settings
  */
-async function handleSettings(bot, chatId, userId, userSettings = null) {
-  // Retrieve settings if not provided
-  if (!userSettings) {
-    userSettings = getUserSettings(userId);
-  }
-
+async function handleSettings(bot, chatId, userId) {
+  // Get current settings
+  const userSettings = getUserSettings(userId);
+  
+  // Determine the display mode based on caption setting
+  const captionEnabled = userSettings.instagram.sendCaption;
+  const displayMode = captionEnabled ? 'Media + Caption' : 'Only Media';
+  
   const keyboard = {
     inline_keyboard: [
       [
-        { text: `Media: ${userSettings.instagram.sendMedia ? 'Only Media' : 'Media + Caption'}`, callback_data: 'toggle_media' },
+        { text: `Mode: ${displayMode}`, callback_data: 'toggle_media' },
       ],
     ],
   };
@@ -36,16 +37,9 @@ async function handleSettingsCallback(bot, query) {
   const chatId = query.message?.chat?.id;
   const userId = query.from?.id?.toString();
 
-  // Debugging logs to trace the query object
-  stepLogger.debug('CALLBACK_QUERY_OBJECT', { query });
-
   // Validate chatId and userId
   if (!chatId || !userId) {
-    stepLogger.error('SETTINGS_CALLBACK_ERROR', {
-      chatId,
-      userId,
-      error: 'Invalid callback query object: chatId or userId is undefined',
-    });
+    stepLogger.error('SETTINGS_CALLBACK_ERROR', { error: 'Invalid callback query object' });
     await bot.answerCallbackQuery(query.id, { text: 'An error occurred. Please try again.' });
     return;
   }
@@ -55,33 +49,36 @@ async function handleSettingsCallback(bot, query) {
   try {
     if (query.data === 'toggle_media') {
       const userSettings = getUserSettings(userId);
-      const newMediaSetting = !userSettings.instagram.sendMedia;
       
-      // When toggling media, also update caption setting to be the opposite
-      // When sendMedia is true → only media (no caption)
-      // When sendMedia is false → media + caption
+      // Toggle caption setting - media is always sent
+      const newCaptionSetting = !userSettings.instagram.sendCaption;
+      
+      // Update settings - media is always true, caption toggles
       updateUserSettings(userId, { 
         instagram: { 
-          sendMedia: newMediaSetting,
-          sendCaption: !newMediaSetting  // opposite of sendMedia
+          sendMedia: true,  // Always send media
+          sendCaption: newCaptionSetting
         } 
       });
 
-      stepLogger.success('SETTINGS_MEDIA_TOGGLED', { 
+      // Log the change
+      stepLogger.success('SETTINGS_MODE_TOGGLED', { 
         chatId, 
         userId, 
-        sendMedia: newMediaSetting,
-        sendCaption: !newMediaSetting
+        sendMedia: true,
+        sendCaption: newCaptionSetting,
+        mode: newCaptionSetting ? 'Media + Caption' : 'Only Media'
       });
       
+      // Let user know
+      const displayMode = newCaptionSetting ? 'Media + Caption' : 'Only Media';
       await bot.answerCallbackQuery(query.id, { 
-        text: `Setting updated: ${newMediaSetting ? 'Only Media' : 'Media + Caption'}`
+        text: `Setting updated: ${displayMode}`
       });
+      
+      // Refresh the settings menu
+      await handleSettings(bot, chatId, userId);
     }
-
-    // Retrieve updated settings and refresh the menu
-    const updatedSettings = getUserSettings(userId);
-    await handleSettings(bot, chatId, userId, updatedSettings);
   } catch (error) {
     stepLogger.error('SETTINGS_CALLBACK_ERROR', { chatId, userId, error: error.message });
     await bot.answerCallbackQuery(query.id, { text: 'An error occurred. Please try again.' });
