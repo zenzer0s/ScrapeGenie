@@ -1,6 +1,7 @@
 // General commands
 const startCommand = require('./general/startCommand');
 const helpCommand = require('./general/helpCommand');
+const { handleHelpSettings } = require('./general/helpCommand');
 const statusCommand = require('./general/statusCommand');
 const usageCommand = require('./general/usageCommand');
 const { settingsCommand } = require('./general/settingsCommand');
@@ -14,15 +15,12 @@ const pinterestStatusCommand = require('./pinterest/pinterestStatusCommand');
 const addAdminCommand = require('./admin/addAdminCommand');
 const removeAdminCommand = require('./admin/removeAdminCommand');
 
-// Handlers
-const { handleSettingsCallback } = require('../handlers/settingsHandler');
-const { handleCallbackQuery } = require('../handlers/callbackHandler');
-
-// Export all commands
+// Export directly - NO imports from handlers here
 module.exports = {
   // General commands
   startCommand,
   helpCommand,
+  handleHelpSettings,
   statusCommand,
   usageCommand,
   settingsCommand,
@@ -35,8 +33,4 @@ module.exports = {
   // Admin commands
   addAdminCommand,
   removeAdminCommand,
-
-  // Handlers
-  handleSettingsCallback,
-  handleCallbackQuery,
 };
