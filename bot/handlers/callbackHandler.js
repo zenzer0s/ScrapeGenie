@@ -1,15 +1,13 @@
-const { 
-  startCommand, 
-  helpCommand, 
-  statusCommand, 
-  usageCommand,
-  pinterestLoginCommand,
-  pinterestLogoutCommand,
-  pinterestStatusCommand
-} = require('../commands');
-const { settingsCommand } = require('../commands/general/settingsCommand');
-const { handleSettingsCallback } = require('../handlers/settingsHandler');
-const { handleSettings } = require('./settingsHandler');
+const startCommand = require('../commands/general/startCommand');
+const helpCommand = require('../commands/general/helpCommand');
+const { handleHelpSettings } = require('../commands/general/helpCommand');
+const statusCommand = require('../commands/general/statusCommand');
+const usageCommand = require('../commands/general/usageCommand');
+const pinterestLoginCommand = require('../commands/pinterest/pinterestLoginCommand');
+const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCommand');
+const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
+
+const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
 const stepLogger = require('../utils/stepLogger');
 
@@ -64,55 +62,68 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     return;
   }
 
-  // Define command handlers
-  const commandMap = {
-    'start': () => startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'help': () => helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'status': () => statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus),
-    'usage': () => usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'pinterest_login': () => pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'pinterest_logout': () => pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'pinterest_status': () => pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
-    'open_settings': async () => {
-      try {
-        const userId = callbackQuery.from.id.toString();
-        const userSettings = getUserSettings(userId);
-        
-        // Call the handleSettings function directly with the userId
-        await handleSettings(bot, chatId, userId, userSettings);
-        return {}; // No message to delete
-      } catch (error) {
-        stepLogger.error('SETTINGS_COMMAND_ERROR', { chatId, error: error.message });
-        throw error;
-      }
-    },
-    'toggle_media': async () => {
-      try {
-        await handleSettingsCallback(bot, callbackQuery); // Properly handle toggle_media
-      } catch (error) {
-        stepLogger.error('TOGGLE_MEDIA_ERROR', { chatId, error: error.message });
-        throw error; // Re-throw the error to be handled in the main try-catch
-      }
-    },
-    'toggle_caption': async () => {
-      try {
-        await handleSettingsCallback(bot, callbackQuery); // Properly handle toggle_caption
-      } catch (error) {
-        stepLogger.error('TOGGLE_CAPTION_ERROR', { chatId, error: error.message });
-        throw error; // Re-throw the error to be handled in the main try-catch
-      }
-    },
-    'reset_settings': async () => {
-      try {
-        await handleSettingsCallback(bot, callbackQuery); // Properly handle reset_settings
-      } catch (error) {
-        stepLogger.error('RESET_SETTINGS_ERROR', { chatId, error: error.message });
-        throw error; // Re-throw the error to be handled in the main try-catch
-      }
-    },
-  };
-
   try {
+    // First, check if it's a help-settings related action
+    if (action === 'toggle_settings' || action === 'toggle_media' || action === 'back_to_help') {
+      const handled = await handleHelpSettings(bot, callbackQuery);
+      if (handled) {
+        stepLogger.info('CALLBACK_HANDLED', {
+          action,
+          chatId,
+          elapsed: Date.now() - startTime,
+        });
+        return;
+      }
+    }
+    
+    // If not handled by help settings, use the existing command map
+    const commandMap = {
+      'start': () => startCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'help': () => helpCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'status': () => statusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }, checkBackendStatus),
+      'usage': () => usageCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'pinterest_login': () => pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'pinterest_logout': () => pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'pinterest_status': () => pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'open_settings': async () => {
+        try {
+          const userId = callbackQuery.from.id.toString();
+          const userSettings = getUserSettings(userId);
+          
+          // Call the handleSettings function directly with the userId
+          await handleSettings(bot, chatId, userId, userSettings);
+          return {}; // No message to delete
+        } catch (error) {
+          stepLogger.error('SETTINGS_COMMAND_ERROR', { chatId, error: error.message });
+          throw error;
+        }
+      },
+      'toggle_media': async () => {
+        try {
+          await handleSettingsCallback(bot, callbackQuery); // Properly handle toggle_media
+        } catch (error) {
+          stepLogger.error('TOGGLE_MEDIA_ERROR', { chatId, error: error.message });
+          throw error; // Re-throw the error to be handled in the main try-catch
+        }
+      },
+      'toggle_caption': async () => {
+        try {
+          await handleSettingsCallback(bot, callbackQuery); // Properly handle toggle_caption
+        } catch (error) {
+          stepLogger.error('TOGGLE_CAPTION_ERROR', { chatId, error: error.message });
+          throw error; // Re-throw the error to be handled in the main try-catch
+        }
+      },
+      'reset_settings': async () => {
+        try {
+          await handleSettingsCallback(bot, callbackQuery); // Properly handle reset_settings
+        } catch (error) {
+          stepLogger.error('RESET_SETTINGS_ERROR', { chatId, error: error.message });
+          throw error; // Re-throw the error to be handled in the main try-catch
+        }
+      },
+    };
+
     // Process the action
     if (commandMap[action]) {
       // Call the appropriate command
