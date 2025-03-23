@@ -1,5 +1,4 @@
 const fs = require('fs');
-const { escapeMarkdown } = require('../utils/textUtils');
 const stepLogger = require('../utils/stepLogger');
 
 /**
@@ -24,17 +23,17 @@ async function handleYoutube(bot, chatId, url, data) {
     // Prepare caption
     let caption = '';
     
-    // Add title
+    // Add title (without Markdown)
     if (data.title) {
-      caption += `*${escapeMarkdown(data.title)}*`;
+      caption += data.title;
       stepLogger.debug('YOUTUBE_TITLE', { title: data.title.substring(0, 50) });
     } else {
-      caption += '*YouTube Video*';
+      caption += 'YouTube Video';
     }
     
-    // Add channel name if available
+    // Add channel name if available (without Markdown)
     if (data.channelName) {
-      caption += `\n\n👤 *Channel:* ${escapeMarkdown(data.channelName)}`;
+      caption += `\n\n👤 Channel: ${data.channelName}`;
     }
     
     // Add description if available (truncated)
@@ -46,27 +45,27 @@ async function handleYoutube(bot, chatId, url, data) {
         desc = desc.substring(0, maxDescLength) + '...';
       }
       
-      caption += `\n\n${escapeMarkdown(desc)}`;
+      caption += `\n\n${desc}`;
       stepLogger.debug('YOUTUBE_DESC', { descLength: data.description.length });
     }
     
-    // Add video stats if available
+    // Add video stats if available (without Markdown)
     if (data.views || data.likes || data.published) {
       caption += '\n';
       
       if (data.views) {
-        caption += `\n👁️ *Views:* ${formatNumber(data.views)}`;
+        caption += `\n👁️ Views: ${formatNumber(data.views)}`;
       }
       
       if (data.likes) {
-        caption += `\n👍 *Likes:* ${formatNumber(data.likes)}`;
+        caption += `\n👍 Likes: ${formatNumber(data.likes)}`;
       }
       
       if (data.published) {
         try {
           const date = new Date(data.published);
           if (!isNaN(date)) {
-            caption += `\n📅 *Published:* ${date.toLocaleDateString()}`;
+            caption += `\n📅 Published: ${date.toLocaleDateString()}`;
           }
         } catch (e) {
           // Ignore invalid date format
@@ -99,14 +98,13 @@ async function handleYoutube(bot, chatId, url, data) {
       // Send video file
       await bot.sendVideo(chatId, fs.createReadStream(data.filepath), {
         caption: caption.length <= captionMaxLength ? caption : '',
-        parse_mode: 'Markdown',
         reply_markup: keyboard,
         supports_streaming: true
       });
       
       // Send caption separately if it's too long
       if (caption.length > captionMaxLength) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, caption);
       }
       
       // Clean up the file after sending
@@ -126,20 +124,18 @@ async function handleYoutube(bot, chatId, url, data) {
       
       await bot.sendPhoto(chatId, data.mediaUrl, { 
         caption: caption.length <= captionMaxLength ? caption : '',
-        parse_mode: 'Markdown',
         reply_markup: keyboard 
       });
       
       // Send caption separately if it's too long
       if (caption.length > captionMaxLength) {
-        await bot.sendMessage(chatId, caption, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, caption);
       }
     } else {
       // No media available, send text only
       stepLogger.info('YOUTUBE_SEND_TEXT_ONLY');
       
       await bot.sendMessage(chatId, caption, { 
-        parse_mode: 'Markdown',
         reply_markup: keyboard 
       });
     }
@@ -181,8 +177,7 @@ async function handleYoutube(bot, chatId, url, data) {
         // Notify user of audio error
         await bot.sendMessage(
           chatId,
-          '⚠️ Sorry, I couldn\'t send the audio file.',
-          { parse_mode: 'Markdown' }
+          '⚠️ Sorry, I couldn\'t send the audio file.'
         ).catch(() => {});
       }
     }
