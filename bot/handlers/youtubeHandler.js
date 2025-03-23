@@ -73,6 +73,9 @@ async function handleYoutube(bot, chatId, url, data) {
         }
       }
     }
+
+    // Check if we have a audio file available
+    const hasAudio = data.hasAudio && data.audioFile && fs.existsSync(data.audioFile);
     
     // Check if we have a downloaded video file
     if (data.filepath) {
@@ -141,6 +144,49 @@ async function handleYoutube(bot, chatId, url, data) {
       });
     }
     
+    // Send audio file if available
+    if (hasAudio) {
+      try {
+        // Get audio file size
+        const audioStats = fs.statSync(data.audioFile);
+        const audioSizeMB = (audioStats.size / (1024 * 1024)).toFixed(2);
+        
+        stepLogger.info('YOUTUBE_SEND_AUDIO', { 
+          audioFile: data.audioFile,
+          audioSize: `${audioSizeMB} MB`,
+          audioType: data.audioType || 'm4a'
+        });
+        
+        // Send loading message
+        const loadingMsg = await bot.sendMessage(chatId, '🎵 Sending audio...');
+        
+        // Send the audio file WITHOUT any caption
+        await bot.sendAudio(chatId, fs.createReadStream(data.audioFile), {
+          // No caption
+          title: data.title || 'YouTube Audio',
+          performer: 'YouTube',
+        });
+        
+        // Delete loading message
+        await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
+        
+        // The audio file will be cleaned up by the ytAudio.js module's auto-cleanup
+      } catch (audioError) {
+        stepLogger.error('YOUTUBE_AUDIO_SEND_ERROR', { 
+          chatId, 
+          error: audioError.message,
+          audioFile: data.audioFile
+        });
+        
+        // Notify user of audio error
+        await bot.sendMessage(
+          chatId,
+          '⚠️ Sorry, I couldn\'t send the audio file.',
+          { parse_mode: 'Markdown' }
+        ).catch(() => {});
+      }
+    }
+    
     stepLogger.success('YOUTUBE_HANDLER_COMPLETE', { chatId });
   } catch (error) {
     stepLogger.error('YOUTUBE_HANDLER_ERROR', { 
@@ -187,4 +233,18 @@ function formatNumber(num) {
   return n.toLocaleString();
 }
 
-module.exports = { handleYoutube };
+/**
+ * Handle YouTube audio callback query
+ * @param {TelegramBot} bot - Telegram bot instance
+ * @param {object} query - Callback query
+ */
+async function handleYoutubeCallback(bot, query) {
+  if (query.data === 'audio_info') {
+    await bot.answerCallbackQuery(query.id, {
+      text: 'High-quality audio has been sent as a separate message',
+      show_alert: false
+    });
+  }
+}
+
+module.exports = { handleYoutube, handleYoutubeCallback };
