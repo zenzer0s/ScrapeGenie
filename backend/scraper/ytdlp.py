@@ -2,6 +2,8 @@ import json
 import subprocess
 import sys
 import os
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 if len(sys.argv) < 3:
@@ -17,14 +19,20 @@ if len(sys.argv) >= 4 and sys.argv[3] == "audio":
     mode = "audio"
 
 os.makedirs(output_dir, exist_ok=True)
-merged_path = os.path.join(output_dir, "output.mp4")
-log_file = os.path.join(output_dir, "yt-dlp-debug.log")
+
+# Generate unique filename using timestamp and random ID
+timestamp = int(time.time())
+random_id = str(uuid.uuid4().hex)[:8]  # 8 characters from UUID
+base_filename = f"{timestamp}_{random_id}"
+
+# Create unique filenames for both video and audio
+merged_path = os.path.join(output_dir, f"{base_filename}.mp4")
+audio_path = os.path.join(output_dir, f"{base_filename}.m4a")
+log_file = os.path.join(output_dir, f"{base_filename}_debug.log")
 
 def download_and_merge():
     """Download and merge video and audio using yt-dlp."""
     if mode == "audio":
-        output_file = os.path.join(output_dir, "output.m4a")
-        
         # Command for audio-only download
         command = [
             "yt-dlp",
@@ -32,7 +40,7 @@ def download_and_merge():
             "--extract-audio",
             "--audio-format", "m4a",               # Force m4a output
             "--audio-quality", "0",                # Best quality
-            "-o", output_file,
+            "-o", audio_path,
             url
         ]
     else:
@@ -54,18 +62,22 @@ with open(log_file, "w") as log:
 
         # Determine media type and file extension
         media_type = "video"
-        output_path = merged_path
         if mode == "audio":
             media_type = "audio"
-            output_path = os.path.join(output_dir, "output.m4a")
+            output_path = audio_path
             file_ext = "m4a"
         else:
+            output_path = merged_path
             file_ext = "mp4"
+
+        # Calculate file size
+        filesize = os.path.getsize(output_path)
 
         # Return the merged file path
         print(json.dumps({
             "success": True,
             "filepath": output_path,
+            "filesize": filesize,
             "mediaType": media_type,
             "fileExtension": file_ext
         }))
