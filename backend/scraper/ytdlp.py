@@ -33,13 +33,16 @@ log_file = os.path.join(output_dir, f"{base_filename}_debug.log")
 def download_and_merge():
     """Download and merge video and audio using yt-dlp."""
     if mode == "audio":
-        # Command for audio-only download
+        # Command for audio-only download with thumbnail embedding
         command = [
             "yt-dlp",
             "-f", "bestaudio[ext=m4a]/bestaudio",  # Prefer m4a format
             "--extract-audio",
             "--audio-format", "m4a",               # Force m4a output
             "--audio-quality", "0",                # Best quality
+            "--embed-thumbnail",                   # Add thumbnail to audio file
+            "--convert-thumbnails", "jpg",         # Convert thumbnail to jpg (more compatible)
+            "--add-metadata",                      # Add video metadata
             "-o", audio_path,
             url
         ]
