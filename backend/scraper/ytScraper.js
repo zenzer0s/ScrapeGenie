@@ -1,6 +1,7 @@
 // ytScraper.js
 const puppeteer = require('puppeteer');
 const getBrowser = require('./browserManager');
+const { fetchYouTubeAudio } = require('./ytAudio'); // Add this line
 
 // Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
@@ -51,6 +52,12 @@ async function ytScraper(videoUrl) {
   // Get thumbnail URL directly
   const thumbnailUrl = getThumbnailUrl(videoId);
   
+  // Start audio download in parallel with metadata scraping
+  const audioPromise = fetchYouTubeAudio(videoUrl).catch(error => {
+    console.error('❌ Audio download failed:', error.message);
+    return null; // Return null if audio download fails
+  });
+  
   // Now we only need to fetch the title
   let browser = null;
   try {
@@ -94,7 +101,11 @@ async function ytScraper(videoUrl) {
              "Untitled YouTube Video";
     });
 
-    return {
+    // Wait for audio download to complete
+    const audio = await audioPromise;
+
+    // Build the result object with all existing properties
+    const result = {
       success: true,
       type: 'youtube',
       title: title,
@@ -103,12 +114,26 @@ async function ytScraper(videoUrl) {
       videoId: videoId
     };
 
+    // Add audio data if available
+    if (audio && audio.success) {
+      result.audioFile = audio.filepath;
+      result.audioType = audio.fileExtension;
+      result.hasAudio = true;
+    } else {
+      result.hasAudio = false;
+    }
+
+    return result;
+
   } catch (error) {
     console.error("YouTube Scrape Error:", error);
     
+    // Wait for the audio even if metadata scraping fails
+    const audio = await audioPromise;
+    
     // Even if scraping fails, we still have the thumbnail URL, so return partial success
     if (videoId) {
-      return {
+      const result = {
         success: true,
         type: 'youtube',
         title: "YouTube Video", // Generic fallback title
@@ -116,6 +141,17 @@ async function ytScraper(videoUrl) {
         originalUrl: videoUrl,
         videoId: videoId
       };
+      
+      // Add audio data if available
+      if (audio && audio.success) {
+        result.audioFile = audio.filepath;
+        result.audioType = audio.fileExtension;
+        result.hasAudio = true;
+      } else {
+        result.hasAudio = false;
+      }
+      
+      return result;
     }
     
     return { 
@@ -135,14 +171,19 @@ async function scrapeYouTube(url, retries = 2) {
       console.log(`⚠️ YouTube scrape failed, retrying (${retries} attempts left)...`);
       return await scrapeYouTube(url, retries - 1);
     }
+    
+    // Extract video ID for fallback
+    const videoId = extractVideoId(url);
+    
     // Fall back to minimal data if all retries fail
     return {
       success: true,
       type: 'youtube',
       title: 'YouTube Video',
-      mediaUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+      mediaUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '',
       originalUrl: url,
-      videoId: videoId
+      videoId: videoId || null,
+      hasAudio: false
     };
   }
 }
