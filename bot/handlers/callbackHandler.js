@@ -6,6 +6,7 @@ const usageCommand = require('../commands/general/usageCommand');
 const pinterestLoginCommand = require('../commands/pinterest/pinterestLoginCommand');
 const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCommand');
 const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
+const { handleYoutubeCallback } = require('./youtubeHandler');
 
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
@@ -146,6 +147,10 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
         chatId,
         elapsed: Date.now() - startTime, // Use startTime to calculate elapsed time
       });
+    } else if (action === 'audio_info') {
+      await handleYoutubeCallback(bot, callbackQuery);
+      // No need to delete message or do other handling for this callback
+      return;
     } else {
       // Handle unknown command
       const unknownCommandMessage = await bot.sendMessage(chatId, "Unknown command");
