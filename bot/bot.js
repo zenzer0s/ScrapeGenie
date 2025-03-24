@@ -194,7 +194,7 @@ bot.onText(/\/start pinterest_login_(.+)/, async (msg, match) => {
 // Add this command handler
 bot.onText(/\/group/, async (msg) => {
   try {
-    await require('./commands/group').process(bot, msg, groupProcessor);
+    await require('./commands/group').process(bot, msg);
   } catch (error) {
     logger.error('Error handling /group command:', error);
   }
@@ -250,13 +250,12 @@ bot.onText(/\/removeadmin/, async (msg) => {
   }
 });
 
-// Make groupProcessor globally accessible
-global.groupProcessor = null;
+
 
 // Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
   try {
-    await handleMessage(bot, msg); // Removed groupProcessor argument
+    await handleMessage(bot, msg); 
   } catch (error) {
     logger.error(`Error handling message: ${error.message}`);
   }
