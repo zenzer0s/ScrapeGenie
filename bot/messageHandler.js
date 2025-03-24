@@ -13,10 +13,9 @@ const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(__dirname, '../downlo
  * Main message handler
  * @param {TelegramBot} bot - The Telegram bot instance
  * @param {object} msg - Telegram message object
- * @param {object} groupProcessor - Group message processor
  * @returns {Promise<void>}
  */
-async function handleMessage(bot, msg, groupProcessor) {
+async function handleMessage(bot, msg) {
   if (!msg || !msg.text) return;
   
   const urls = extractUrls(msg.text);
@@ -34,13 +33,6 @@ async function handleMessage(bot, msg, groupProcessor) {
   });
   
   try {
-    // Check if this message is in our tracked group
-    if (groupProcessor && groupProcessor.isGroupChat(chatId)) {
-      // Let the group processor handle it
-      await groupProcessor.handleGroupMessage(msg);
-      return;
-    }
-    
     // Multiple URLs - use batch processor
     if (urls.length > 1) {
       stepLogger.info('MULTIPLE_URLS_DETECTED', {
