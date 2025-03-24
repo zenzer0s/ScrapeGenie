@@ -127,7 +127,6 @@ const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/cal
 const { checkBackendStatus } = require('./utils/statusUtils');
 const { setupMaintenanceTasks } = require('./services/maintenanceService');
 const queueService = require('./services/queueService');
-const GroupProcessor = require('./group/groupProcessor');
 
 // Set up Axios to retry failed requests
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
@@ -257,7 +256,7 @@ global.groupProcessor = null;
 // Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
   try {
-    await handleMessage(bot, msg, groupProcessor);
+    await handleMessage(bot, msg); // Removed groupProcessor argument
   } catch (error) {
     logger.error(`Error handling message: ${error.message}`);
   }
@@ -282,106 +281,16 @@ process.on('unhandledRejection', (reason, promise) => {
 // Setup maintenance tasks
 setupMaintenanceTasks();
 
-// Initialize the queue processor and group processor
-let groupProcessor;
-
+// Initialize the queue processor
 (async () => {
   try {
-    // No queue processor needed anymore
-    logger.info("Direct processing mode - no queue being used");
-    
-    // Initialize the group processor
-    logger.processing("Initializing group processor...");
-    const groupProcessor = new GroupProcessor(bot);
-    await groupProcessor.initialize();
-    
-    // Store in global for access from commands
-    global.groupProcessor = groupProcessor;
-    
-    if (groupProcessor.groupInfo) {
-      logger.success(`Group processor initialized for "${groupProcessor.groupInfo.title}"`);
-      
-      // Process any pending messages in the group
-      logger.processing("Checking for unprocessed messages in group...");
-      const processedCount = await groupProcessor.processUnprocessedMessages();
-      
-      if (processedCount > 0) {
-        logger.success(`Processing ${processedCount} links from group`);
-      } else {
-        logger.success("No pending links in group");
-      }
-    } else {
-      logger.warn("Group processor initialization failed. To use the group feature:");
-      logger.warn("1. Create a Telegram group for collecting links");
-      logger.warn("2. Add this bot to the group");
-      logger.warn("3. Run /register command in that group");
-    }
-  } catch (error) {
-    logger.error(`Initialization error: ${error.message}`);
-  }
-})();
-
-logger.success("Bot initialization complete");
-
-// For queue initialization:
-async function initQueue() {
-  if (initialized.queue) {
-    return;
-  }
-  
-  logger.processing("Initializing link processing queue...");
-  
-  try {
-    // Your queue initialization code
-    
-    initialized.queue = true;
-    logger.success("Queue initialized successfully");
-  } catch (error) {
-    logger.error(`Queue initialization failed: ${error.message}`);
-  }
-}
-
-// For queue processor:
-async function initLocalQueueProcessor() {
-  if (initialized.queueProcessor) {
-    return;
-  }
-  
-  logger.processing("Initializing queue processor...");
-  
-  try {
-    // Your queue processor initialization code
-    
-    initialized.queueProcessor = true;
-    logger.success("Queue processor initialized");
+    logger.processing("Initializing queue processor...");
+    await queueService.initialize();
+    logger.success("Queue processor initialized successfully");
   } catch (error) {
     logger.error(`Queue processor initialization failed: ${error.message}`);
   }
-}
-
-// For group processor:
-async function initGroupProcessor() {
-  if (initialized.group) {
-    return;
-  }
-  
-  logger.processing("Initializing group processor...");
-  
-  try {
-    // Your group processor initialization code
-    
-    initialized.group = true;
-    
-    if (groupProcessor.groupInfo) {
-      logger.success(`Group processor initialized for "${groupProcessor.groupInfo.title}"`);
-      // Process pending messages
-    } else {
-      logger.warn("Group processor initialization failed");
-    }
-  } catch (error) {
-    logger.error(`Group initialization failed: ${error.message}`);
-  }
-}
+})();
 
 // Send online notification after bot is fully initialized
 (async () => {
@@ -391,3 +300,5 @@ async function initGroupProcessor() {
     logger.error(`Error sending online notification: ${error.message}`);
   }
 })();
+
+logger.success("Bot initialization complete");
