@@ -83,11 +83,9 @@ async function shutdownQueue() {
 }
 
 module.exports = {
-  initQueue,
   addLinkToQueue,
   getQueueStats,
   isQueueEnabled,
   shutdownQueue,
-  // Compatibility with the getter
   get linkQueue() { return null; }
 };
