@@ -280,17 +280,6 @@ process.on('unhandledRejection', (reason, promise) => {
 // Setup maintenance tasks
 setupMaintenanceTasks();
 
-// Initialize the queue processor
-(async () => {
-  try {
-    logger.processing("Initializing queue processor...");
-    await queueService.initialize();
-    logger.success("Queue processor initialized successfully");
-  } catch (error) {
-    logger.error(`Queue processor initialization failed: ${error.message}`);
-  }
-})();
-
 // Send online notification after bot is fully initialized
 (async () => {
   try {
