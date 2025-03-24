@@ -45,6 +45,5 @@ Object.entries(config.paths).forEach(([name, dir]) => {
 // Log configuration summary
 console.log("🔍 Bot configuration loaded:");
 console.log(`• API endpoint: ${config.backendUrl}`);
-console.log(`• Using polling mode`);
 
 module.exports = config;
