@@ -1,5 +1,9 @@
 const stepLogger = require('../../utils/stepLogger');
 const { getUserSettings, updateUserSettings } = require('../../utils/settingsManager');
+const { 
+    googleConnectCommand, 
+    googleStatusCommand 
+} = require('../google');
 
 async function helpCommand(bot, msg) {
   const chatId = msg.chat.id;
@@ -13,7 +17,8 @@ async function helpCommand(bot, msg) {
     `   • YouTube - Gets title, thumbnail, and video link.\n` +
     `   • Instagram - Extracts posts and reels with captions.\n` +
     `   • Pinterest - Downloads pins and videos (login may be required).\n` +
-    `   • Websites - Fetches title, description & preview.\n\n` +
+    `   • Websites - Fetches title, description & preview.\n` +
+    `   • Google Sheets - Stores website data automatically.\n\n` +
     `Select an option below:`,
     { 
       parse_mode: 'Markdown',
@@ -24,17 +29,22 @@ async function helpCommand(bot, msg) {
             { text: '🏠 Home', callback_data: 'start' },
             { text: '🔄 Status', callback_data: 'status' }
           ],
-          // Row 2: Usage + Pinterest Login
+          // Row 2: Usage + Pinterest Status
           [
             { text: '📊 Usage', callback_data: 'usage' },
             { text: '🔍 Pinterest Status', callback_data: 'pinterest_status' }
           ],
-          // Row 3: Pinterest Logout + Pinterest Status
+          // Row 3: Pinterest Login/Logout
           [
             { text: '🔐 Pinterest Login', callback_data: 'pinterest_login' },
             { text: '🔓 Pinterest Logout', callback_data: 'pinterest_logout' }
           ],
-          // Row 4: Customize Settings
+          // Row 4: Google Sheets Controls
+          [
+            { text: '📊 Connect Sheets', callback_data: 'google_connect' },
+            { text: '🔍 Sheets Status', callback_data: 'google_status' }
+          ],
+          // Row 5: Settings
           [
             { text: '⚙️ Customize Settings', callback_data: 'toggle_settings' }
           ]
@@ -170,7 +180,12 @@ async function handleHelpSettings(bot, query) {
           { text: '🔐 Pinterest Login', callback_data: 'pinterest_login' },
           { text: '🔓 Pinterest Logout', callback_data: 'pinterest_logout' }
         ],
-        // Row 4: Customize Settings
+        // Row 4: Google Sheets Controls
+        [
+          { text: '📊 Connect Sheets', callback_data: 'google_connect' },
+          { text: '🔍 Sheets Status', callback_data: 'google_status' }
+        ],
+        // Row 5: Customize Settings
         [
           { text: '⚙️ Customize Settings', callback_data: 'toggle_settings' }
         ]
