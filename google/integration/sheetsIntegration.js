@@ -1,18 +1,29 @@
 const authHandler = require('../auth/authHandler');
 const sheetsManager = require('../sheets/sheetsManager');
+const tokenStorage = require('../storage/tokenStorage');
 
 class SheetsIntegration {
-    async setupUserSheet(userId, authCode) {
+    async setupUserSheet(userId, tokens) {
         try {
-            // Get tokens using auth code
-            const tokens = await authHandler.getTokens(authCode);
+            if (!tokens) {
+                throw new Error('No OAuth tokens provided');
+            }
             
-            // Initialize sheets with auth
+            console.log('Setting up sheet for user:', userId);
+            
+            // Set credentials
             const auth = authHandler.setCredentials(tokens);
             sheetsManager.initializeSheets(auth);
 
             // Create new spreadsheet
             const spreadsheetId = await sheetsManager.createNewSpreadsheet(userId);
+            
+            // Store tokens and spreadsheet ID
+            await tokenStorage.saveTokens(userId, {
+                tokens,
+                spreadsheetId,
+                createdAt: new Date().toISOString()
+            });
             
             return {
                 spreadsheetId,
@@ -24,20 +35,32 @@ class SheetsIntegration {
         }
     }
 
-    async storeWebsiteMetadata(spreadsheetId, tokens, metadata) {
-        try {
-            // Set credentials and initialize sheets
-            const auth = authHandler.setCredentials(tokens);
-            sheetsManager.initializeSheets(auth);
+    async checkConnection(userId) {
+        return await tokenStorage.hasTokens(userId);
+    }
 
-            // Store the metadata
-            await sheetsManager.appendWebsiteData(spreadsheetId, metadata);
+    async storeWebsiteMetadata(userId, metadata) {
+        try {
+            const userData = await tokenStorage.getTokens(userId);
+            
+            if (!userData) {
+                throw new Error('User not connected to Google Sheets');
+            }
+            
+            const auth = authHandler.setCredentials(userData.tokens);
+            sheetsManager.initializeSheets(auth);
+            
+            await sheetsManager.appendWebsiteData(userData.spreadsheetId, metadata);
             
             return true;
         } catch (error) {
             console.error('Failed to store metadata:', error);
             throw error;
         }
+    }
+
+    async disconnectUser(userId) {
+        return await tokenStorage.removeTokens(userId);
     }
 }
 
