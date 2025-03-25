@@ -35,7 +35,7 @@ async function googleStatusCommand(bot, msg) {
 
         return { sentMessage, userMessageId: msg.message_id };
     } catch (error) {
-        stepLogger.error('CMD_GOOGLE_STATUS_ERROR', { chatId, error: error.message });
+        stepLogger.error(`CMD_GOOGLE_STATUS_ERROR: ${error.message}`);
         const sentMessage = await bot.sendMessage(
             chatId,
             '❌ Failed to check Google connection status. Please try again later.'
