@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const lockFile = path.join(__dirname, '../.bot.lock');
 const statusNotifier = require('./services/statusNotifier');
+const { registerGoogleCommands } = require('./commands/google');
 
 // Check if another instance is running
 function checkForMultipleInstances() {
@@ -250,7 +251,48 @@ bot.onText(/\/removeadmin/, async (msg) => {
   }
 });
 
+// Register Google command handlers
+bot.onText(/\/google_connect/, async (msg) => {
+  const { sentMessage, userMessageId } = await googleConnectCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
+});
 
+bot.onText(/\/google_status/, async (msg) => {
+  const { sentMessage, userMessageId } = await googleStatusCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
+});
+
+bot.onText(/\/google_disconnect/, async (msg) => {
+  const { sentMessage, userMessageId } = await googleDisconnectCommand(bot, msg);
+  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
+});
+
+// Handle Google OAuth callback
+bot.onText(/\/start google_auth_(.+)/, async (msg, match) => {
+  const token = match[1];
+  const chatId = msg.chat.id;
+  
+  try {
+    const response = await axios.post(`${config.backendUrl}/api/google/auth-callback`, {
+      token,
+      chatId
+    });
+    
+    if (response.data.success) {
+      await bot.sendMessage(chatId, 
+        '✅ Google Sheets connected successfully!\n\nYour scraped website data will be automatically stored.');
+    } else {
+      throw new Error('Authentication failed');
+    }
+  } catch (error) {
+    logger.error(`Google auth callback error: ${error.message}`);
+    await bot.sendMessage(chatId, 
+      '❌ Failed to connect Google Sheets. Please try again using /google_connect');
+  }
+});
 
 // Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
@@ -279,6 +321,15 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Setup maintenance tasks
 setupMaintenanceTasks();
+
+// Initialize bot
+function initializeBot() {
+    // Register Google commands
+    registerGoogleCommands(bot);
+
+    // Log successful initialization
+    stepLogger.log('Google commands registered successfully');
+}
 
 // Send online notification after bot is fully initialized
 (async () => {
