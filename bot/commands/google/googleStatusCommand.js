@@ -7,6 +7,7 @@ async function googleStatusCommand(bot, msg) {
 
     try {
         const isConnected = await googleService.checkConnectionStatus(chatId);
+        stepLogger.debug('GOOGLE_STATUS_RESULT', { chatId, isConnected });
 
         let sentMessage;
         if (isConnected) {
