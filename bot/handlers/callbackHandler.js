@@ -7,6 +7,10 @@ const pinterestLoginCommand = require('../commands/pinterest/pinterestLoginComma
 const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCommand');
 const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
 const { handleYoutubeCallback } = require('./youtubeHandler');
+const googleConnectCommand = require('../commands/google/googleConnectCommand');
+const googleStatusCommand = require('../commands/google/googleStatusCommand');
+const googleDisconnectCommand = require('../commands/google/googleDisconnectCommand');
+const { handleGoogleCallback } = require('./googleHandler');
 
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
@@ -121,6 +125,18 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
         } catch (error) {
           stepLogger.error('RESET_SETTINGS_ERROR', { chatId, error: error.message });
           throw error; // Re-throw the error to be handled in the main try-catch
+        }
+      },
+      'google_connect': () => googleConnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_status': () => googleStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_disconnect': () => googleDisconnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_disconnect_confirm': async () => {
+        try {
+          await handleGoogleCallback(bot, callbackQuery);
+          return {};
+        } catch (error) {
+          stepLogger.error('GOOGLE_DISCONNECT_ERROR', { chatId, error: error.message });
+          throw error;
         }
       },
     };
