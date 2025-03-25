@@ -21,9 +21,18 @@ class GoogleAuthHandler {
     }
 
     async getTokens(code) {
-        const { tokens } = await this.oauth2Client.getToken(code);
-        this.oauth2Client.setCredentials(tokens);
-        return tokens;
+        if (!code) {
+            throw new Error('Authorization code is required');
+        }
+        
+        try {
+            const { tokens } = await this.oauth2Client.getToken(code);
+            this.oauth2Client.setCredentials(tokens);
+            return tokens;
+        } catch (error) {
+            console.error('Error getting tokens:', error.message);
+            throw error;
+        }
     }
 
     setCredentials(tokens) {
