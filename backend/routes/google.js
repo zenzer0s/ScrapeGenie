@@ -3,6 +3,8 @@ const router = express.Router();
 const scraperBridge = require('../../google/integration/scraperSheetsBridge');
 const { GOOGLE_CONFIG } = require('../../google/config/config');
 const authHandler = require('../../google/auth/authHandler');
+const sheetsIntegration = require('../../google/integration/sheetsIntegration');
+const tokenStorage = require('../../google/storage/tokenStorage');
 
 // Add this endpoint for getting the auth URL
 router.get('/auth-url', (req, res) => {
@@ -28,9 +30,16 @@ router.get('/auth/google', (req, res) => {
     res.redirect(authUrl);
 });
 
-router.get('/auth/google/callback', async (req, res) => {
+router.get('/callback', async (req, res) => {
     try {
         const { code, state } = req.query;
+        
+        if (!code) {
+            throw new Error('Authorization code is missing');
+        }
+        
+        console.log('Received authorization code:', code);
+        console.log('State:', state);
         
         // Decode state to get chatId
         const chatId = Buffer.from(state, 'base64').toString();
@@ -38,7 +47,7 @@ router.get('/auth/google/callback', async (req, res) => {
         const tokens = await authHandler.getTokens(code);
         const setupResult = await sheetsIntegration.setupUserSheet(chatId, tokens);
         
-        // Redirect back to Telegram bot
+        // Success message
         res.send(`
             <html>
                 <body>
@@ -59,6 +68,44 @@ router.get('/auth/google/callback', async (req, res) => {
                 </body>
             </html>
         `);
+    }
+});
+
+// Add this endpoint for checking connection status
+router.get('/status', async (req, res) => {
+    try {
+        const { chatId } = req.query;
+        if (!chatId) {
+            return res.status(400).json({ error: 'Chat ID required' });
+        }
+        
+        // Check if user has connected Google Sheets
+        // In production, you would check a database
+        // For now, we'll return a mock response
+        const isConnected = await sheetsIntegration.checkConnection(chatId);
+        
+        res.json({ isConnected });
+    } catch (error) {
+        console.error('Error checking status:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add disconnect endpoint
+router.post('/disconnect', async (req, res) => {
+    try {
+        const { chatId } = req.body;
+        
+        if (!chatId) {
+            return res.status(400).json({ error: 'Chat ID required' });
+        }
+        
+        const success = await sheetsIntegration.disconnectUser(chatId);
+        
+        res.json({ success });
+    } catch (error) {
+        console.error('Disconnect error:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
