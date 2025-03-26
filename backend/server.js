@@ -89,6 +89,8 @@ if (fs.existsSync(routesDir)) {
   console.warn('Routes directory not found:', routesDir);
 }
 
+const googleRoutes = require('./routes/google');
+
 // Basic health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date() });
@@ -102,6 +104,9 @@ app.get('/', (req, res) => {
     endpoints: availableEndpoints
   });
 });
+
+// Add Google routes
+app.use('/api/google', googleRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
