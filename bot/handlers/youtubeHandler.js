@@ -122,23 +122,10 @@ async function handleYoutube(bot, chatId, url, data) {
       
       const captionMaxLength = 1024; // Telegram caption limit
       
-      try {
-        // Try sending as photo first
-        await bot.sendPhoto(chatId, data.mediaUrl, { 
-          caption: caption.length <= captionMaxLength ? caption : '',
-          reply_markup: keyboard 
-        });
-      } catch (thumbnailError) {
-        stepLogger.warn('YOUTUBE_THUMBNAIL_FAILED', { 
-          error: thumbnailError.message 
-        });
-        
-        // Fallback to sending message with URL
-        await bot.sendMessage(chatId, caption, { 
-          reply_markup: keyboard,
-          disable_web_page_preview: false // Enable URL preview
-        });
-      }
+      await bot.sendPhoto(chatId, data.mediaUrl, { 
+        caption: caption.length <= captionMaxLength ? caption : '',
+        reply_markup: keyboard 
+      });
       
       // Send caption separately if it's too long
       if (caption.length > captionMaxLength) {

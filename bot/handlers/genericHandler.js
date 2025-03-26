@@ -31,7 +31,6 @@ async function handleGenericWebsite(bot, chatId, url, data) {
       stepLogger.debug('GENERIC_TITLE', { title: data.title.substring(0, 50) });
     }
     
-    
     // Description if available
     if (data.description) {
       message += `\n\n${escapeMarkdown(data.description)}`;
@@ -62,11 +61,6 @@ async function handleGenericWebsite(bot, chatId, url, data) {
       if (data.metadata.author) {
         message += `\n👤 *Author:* ${escapeMarkdown(data.metadata.author)}`;
       }
-    }
-    
-    // Add sheet update confirmation if data was saved to Google Sheets
-    if (data.sheetUpdated) {
-      message += '\n\n📊 *Data saved to your Google Sheet!*';
     }
     
     // Send message if we have content
