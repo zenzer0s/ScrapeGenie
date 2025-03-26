@@ -42,6 +42,7 @@ async function handleSheetNavigation(bot, query, page) {
     }
 }
 
+// Update the handleWebsiteView function to pass the index to createBackButton
 async function handleWebsiteView(bot, query, index) {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
@@ -70,8 +71,8 @@ async function handleWebsiteView(bot, query, index) {
         // Format the website details
         const detailMessage = formatSheetDetailMessage(selectedWebsite);
         
-        // Create back button
-        const backButton = createBackButton(currentPage);
+        // Create back button with delete option
+        const backButton = createBackButton(currentPage, index);
         
         // Update the message with website details
         await bot.editMessageText(detailMessage, {
@@ -94,6 +95,132 @@ async function handleWebsiteView(bot, query, index) {
     }
 }
 
+// Add this new function to handle deletion
+async function handleWebsiteDelete(bot, query, index) {
+    const chatId = query.message.chat.id;
+    const messageId = query.message.message_id;
+    
+    try {
+        // Get current page from button data
+        const buttonRows = query.message.reply_markup.inline_keyboard;
+        const buttonsRow = buttonRows[0]; // First row with back and delete buttons
+        const backButton = buttonsRow[0]; // Back button contains page info
+        const pageNumber = parseInt(backButton.callback_data.split('_').pop());
+        
+        // Show confirmation dialog
+        await bot.editMessageText(
+            '⚠️ *Are you sure you want to delete this website?*\n\nThis action cannot be undone.',
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '✅ Yes, delete it',
+                                callback_data: `sheet_delete_confirm_${index}_${pageNumber}`
+                            },
+                            {
+                                text: '❌ No, keep it',
+                                callback_data: `sheet_view_${index}`
+                            }
+                        ]
+                    ]
+                }
+            }
+        );
+        
+        // Answer the callback query
+        await bot.answerCallbackQuery(query.id);
+        return true;
+    } catch (error) {
+        stepLogger.error(`WEBSITE_DELETE_ERROR: ${error.message}`, { chatId, index });
+        await bot.answerCallbackQuery(query.id, {
+            text: '❌ Failed to prepare deletion',
+            show_alert: true
+        });
+        throw error;
+    }
+}
+
+// Add this function to handle delete confirmation
+async function handleWebsiteDeleteConfirm(bot, query, index, pageNumber) {
+    const chatId = query.message.chat.id;
+    const messageId = query.message.message_id;
+    
+    try {
+        // Send a loading message
+        await bot.answerCallbackQuery(query.id, {
+            text: '🔄 Deleting website...'
+        });
+        
+        // Fetch data for the page
+        const pageData = await googleService.getSheetData(chatId, pageNumber);
+        
+        // Get the website to delete
+        const websiteToDelete = pageData.entries[index];
+        
+        if (!websiteToDelete) {
+            await bot.answerCallbackQuery(query.id, {
+                text: '❌ Website not found',
+                show_alert: true
+            });
+            return false;
+        }
+        
+        // Delete the website from the sheet
+        await googleService.deleteSheetEntry(chatId, websiteToDelete);
+        
+        // Show success message
+        await bot.editMessageText(
+            '✅ *Website Deleted Successfully*\n\nThe website has been removed from your saved websites.',
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '◀️ Back to list',
+                                callback_data: `sheet_page_${pageNumber}`
+                            }
+                        ]
+                    ]
+                }
+            }
+        );
+        
+        return true;
+    } catch (error) {
+        stepLogger.error(`WEBSITE_DELETE_CONFIRM_ERROR: ${error.message}`, { chatId, index });
+        
+        // Show error message
+        await bot.editMessageText(
+            `❌ *Error Deleting Website*\n\nCould not delete the website: ${error.message}`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '◀️ Back to details',
+                                callback_data: `sheet_view_${index}`
+                            }
+                        ]
+                    ]
+                }
+            }
+        );
+        
+        return false;
+    }
+}
+
+// Update the handleSheetCallback function to include the delete handlers
 async function handleSheetCallback(bot, query) {
     const chatId = query.message.chat.id;
     const action = query.data;
@@ -107,6 +234,18 @@ async function handleSheetCallback(bot, query) {
         if (action.startsWith('sheet_view_')) {
             const index = parseInt(action.split('_').pop());
             return await handleWebsiteView(bot, query, index);
+        }
+        
+        if (action.startsWith('sheet_delete_confirm_')) {
+            const parts = action.split('_');
+            const index = parseInt(parts[3]);
+            const pageNumber = parseInt(parts[4]);
+            return await handleWebsiteDeleteConfirm(bot, query, index, pageNumber);
+        }
+        
+        if (action.startsWith('sheet_delete_')) {
+            const index = parseInt(action.split('_').pop());
+            return await handleWebsiteDelete(bot, query, index);
         }
         
         if (action === 'sheet_refresh') {
