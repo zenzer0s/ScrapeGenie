@@ -10,7 +10,9 @@ const { handleYoutubeCallback } = require('./youtubeHandler');
 const googleConnectCommand = require('../commands/google/googleConnectCommand');
 const googleStatusCommand = require('../commands/google/googleStatusCommand');
 const googleDisconnectCommand = require('../commands/google/googleDisconnectCommand');
+const { googleSheetCommand } = require('../commands/google');
 const { handleGoogleCallback } = require('./googleHandler');
+const { handleSheetCallback } = require('./googleSheetHandler');
 
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
@@ -67,9 +69,15 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     return;
   }
 
+  // Add this near the beginning, before your commandMap
+  if (action.startsWith('sheet_')) {
+    const handled = await handleSheetCallback(bot, callbackQuery);
+    if (handled) return;
+  }
+
   try {
     // First, check if it's a help-settings related action
-    if (action === 'toggle_settings' || action === 'toggle_media' || action === 'back_to_help') {
+    if (action === 'toggle_settings' || action === 'toggle_media' || action === 'back_to_help' || action === 'google_sheet') {
       const handled = await handleHelpSettings(bot, callbackQuery);
       if (handled) {
         stepLogger.info('CALLBACK_HANDLED', {
@@ -130,6 +138,7 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
       'google_connect': () => googleConnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'google_status': () => googleStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'google_disconnect': () => googleDisconnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_sheet': () => googleSheetCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }), // Add this line
       'google_disconnect_confirm': async () => {
         try {
           await handleGoogleCallback(bot, callbackQuery);
@@ -167,6 +176,14 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
       await handleYoutubeCallback(bot, callbackQuery);
       // No need to delete message or do other handling for this callback
       return;
+    } else if (action === 'google_disconnect_confirm') {
+      try {
+        await handleGoogleDisconnect(bot, callbackQuery);
+        return;
+      } catch (error) {
+        stepLogger.error(`GOOGLE_DISCONNECT_ERROR: ${error.message}`);
+        return;
+      }
     } else {
       // Handle unknown command
       const unknownCommandMessage = await bot.sendMessage(chatId, "Unknown command");
@@ -189,6 +206,40 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     );
 
     deleteMessageAfterDelay(bot, chatId, errorMessage.message_id, 15000);
+  }
+}
+
+/**
+ * Function to handle Google disconnect
+ * @param {TelegramBot} bot - Telegram bot instance
+ * @param {object} query - Callback query object
+ */
+async function handleGoogleDisconnect(bot, query) {
+  const chatId = query.message.chat.id;
+  try {
+    const googleService = require('../services/googleService');
+    await googleService.disconnectGoogle(chatId);
+    
+    await bot.answerCallbackQuery(query.id, {
+      text: '✅ Google Sheets disconnected successfully!',
+      show_alert: true
+    });
+    
+    // Update the message
+    await bot.editMessageText(
+      '❌ Google Sheets is now disconnected. Your data will no longer be saved to Google Sheets.',
+      {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'Markdown'
+      }
+    );
+  } catch (error) {
+    await bot.answerCallbackQuery(query.id, {
+      text: '❌ Failed to disconnect Google Sheets',
+      show_alert: true
+    });
+    throw error;
   }
 }
 
