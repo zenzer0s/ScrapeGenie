@@ -1,6 +1,6 @@
 const stepLogger = require('../../utils/stepLogger');
 const googleService = require('../../services/googleService');
-const { formatSheetDataMessage, createNavigationButtons } = require('../../utils/sheetUtils');
+const { formatSheetListMessage, createWebsiteButtons } = require('../../utils/sheetUtils');
 
 async function googleSheetCommand(bot, msg) {
     const chatId = msg.chat.id;
@@ -29,23 +29,23 @@ async function googleSheetCommand(bot, msg) {
         // Send a loading message
         const loadingMessage = await bot.sendMessage(
             chatId,
-            '🔄 Loading your Google Sheets data...'
+            '🔄 Loading your saved websites...'
         );
 
         try {
             // Fetch first page of data
             const pageData = await googleService.getSheetData(chatId, 1);
             
-            // Create message with navigation buttons
-            const message = formatSheetDataMessage(pageData);
-            const navigationButtons = createNavigationButtons(pageData.currentPage, pageData.totalPages);
+            // Create message with website buttons
+            const message = formatSheetListMessage(pageData);
+            const websiteButtons = createWebsiteButtons(pageData);
 
             // Edit the loading message with the actual data
             await bot.editMessageText(message, {
                 chat_id: chatId,
                 message_id: loadingMessage.message_id,
                 parse_mode: 'Markdown',
-                reply_markup: navigationButtons
+                reply_markup: websiteButtons
             });
 
             return { sentMessage: loadingMessage, userMessageId: msg.message_id };
