@@ -71,6 +71,25 @@ class GoogleService {
             throw new Error('Failed to retrieve sheet data');
         }
     }
+
+    async deleteSheetEntry(chatId, entry) {
+        try {
+            stepLogger.info('GOOGLE_SHEET_DELETE_REQUEST', { chatId, url: entry.url });
+            
+            // Call the backend API to delete the entry
+            await this.api.delete('/api/google/sheet-entry', {
+                data: { 
+                    chatId,
+                    url: entry.url  // Using URL as the unique identifier
+                }
+            });
+            
+            return true;
+        } catch (error) {
+            stepLogger.error(`GOOGLE_SHEET_DELETE_ERROR: ${error.message}`, { chatId });
+            throw new Error('Failed to delete entry from sheet');
+        }
+    }
 }
 
 router.get('/status', async (req, res) => {
