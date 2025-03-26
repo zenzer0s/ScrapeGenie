@@ -81,6 +81,54 @@ router.get('/sheet-data', async (req, res) => {
   }
 });
 
+// Add this new endpoint
+router.delete('/sheet-entry', async (req, res) => {
+  try {
+    const { chatId, url } = req.body;
+    
+    if (!chatId || !url) {
+      return res.status(400).json({ error: 'Chat ID and URL required' });
+    }
+    
+    console.log(`Deleting sheet entry for chatId: ${chatId}, URL: ${url}`);
+    
+    // Check if user is connected
+    const isConnected = await sheetsIntegration.checkConnection(chatId);
+    
+    if (!isConnected) {
+      return res.status(401).json({ error: 'User not connected to Google Sheets' });
+    }
+    
+    // Get user data and authenticate
+    const userData = await tokenStorage.getTokens(chatId);
+    
+    if (!userData || !userData.tokens) {
+      console.error('No tokens found for user', chatId);
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    if (!userData.spreadsheetId) {
+      console.error('No spreadsheet ID found for user', chatId);
+      return res.status(404).json({ error: 'Spreadsheet not found' });
+    }
+    
+    // Set up authentication
+    authHandler.setCredentials(userData.tokens);
+    const authClient = authHandler.getAuthClient();
+    
+    // Initialize sheets with auth client
+    sheetsManager.initializeSheets(authClient);
+    
+    // Delete the entry from the sheet
+    await sheetsManager.deleteEntryByUrl(userData.spreadsheetId, url);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting sheet entry:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Make sure these other routes still work
 router.get('/auth-url', async (req, res) => {
   try {
