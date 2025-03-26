@@ -49,10 +49,36 @@ async function handleWebsiteView(bot, query, index) {
     
     try {
         // Get current page from button data
-        const buttonRows = query.message.reply_markup.inline_keyboard;
-        const navRow = buttonRows[buttonRows.length - 2]; // Navigation row is second to last
-        const pageButton = navRow[2]; // Middle button shows current page
-        const [currentPage, totalPages] = pageButton.text.split('/').map(num => parseInt(num));
+        // This is where the error is happening - safely extract the page number
+        let currentPage = 1; // Default to page 1
+        
+        try {
+            const buttonRows = query.message.reply_markup.inline_keyboard;
+            if (buttonRows && buttonRows.length >= 2) {
+                const navRow = buttonRows[buttonRows.length - 2]; // Navigation row is second to last
+                if (navRow && navRow.length >= 2) {
+                    const pageButton = navRow[1]; // Middle button shows current page (now at index 1)
+                    if (pageButton && pageButton.text) {
+                        const pageParts = pageButton.text.split('/');
+                        if (pageParts.length >= 1) {
+                            currentPage = parseInt(pageParts[0]) || 1;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            stepLogger.warn('Failed to extract page number from button data', { 
+                error: err.message, 
+                fallbackPage: 1 
+            });
+            // Continue with default page 1
+        }
+        
+        stepLogger.debug('VIEW_WEBSITE_DETAILS', { 
+            chatId, 
+            index, 
+            currentPage 
+        });
         
         // Fetch data for the current page
         const pageData = await googleService.getSheetData(chatId, currentPage);
@@ -224,6 +250,7 @@ async function handleWebsiteDeleteConfirm(bot, query, index, pageNumber) {
 async function handleSheetCallback(bot, query) {
     const chatId = query.message.chat.id;
     const action = query.data;
+    const startTime = Date.now(); // Add this line
     
     try {
         if (action.startsWith('sheet_page_')) {
@@ -262,7 +289,13 @@ async function handleSheetCallback(bot, query) {
             return true;
         }
         
-        return false; // Not handled
+        stepLogger.info('SHEET_CALLBACK_HANDLED', {
+            action,
+            chatId,
+            elapsed: Date.now() - startTime
+        });
+        
+        return true;
     } catch (error) {
         stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { chatId, action });
         
