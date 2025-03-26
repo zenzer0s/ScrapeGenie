@@ -1,13 +1,14 @@
 const { google } = require('googleapis');
 const authHandler = require('../auth/authHandler');
+const sheetsManager = require('../../google/sheets/sheetsManager');
 
 class GoogleSheetsManager {
     constructor() {
         this.sheets = null;
     }
 
-    initializeSheets(auth) {
-        this.sheets = google.sheets({ version: 'v4', auth });
+    initializeSheets(authClient) {
+        this.sheets = google.sheets({ version: 'v4', auth: authClient });
     }
 
     async createNewSpreadsheet(userId) {
@@ -122,6 +123,78 @@ class GoogleSheetsManager {
             return true;
         } catch (error) {
             console.error('[SHEETS_MANAGER] Error appending data:', error);
+            throw error;
+        }
+    }
+
+    async getSpreadsheetData(spreadsheetId) {
+        if (!this.sheets) throw new Error('Sheets API not initialized');
+
+        try {
+            console.log(`Getting data from sheet: ${spreadsheetId}`);
+            
+            try {
+                // First check if the sheet exists
+                await this.sheets.spreadsheets.get({
+                    spreadsheetId
+                });
+            } catch (error) {
+                // Sheet doesn't exist or other error
+                console.error('Error accessing spreadsheet:', error.message);
+                return [];
+            }
+            
+            try {
+                // Check if the Website Metadata sheet exists
+                const response = await this.sheets.spreadsheets.get({
+                    spreadsheetId,
+                    ranges: ['Website Metadata!A1:D']
+                });
+                
+                // Get the values from the Website Metadata sheet
+                const dataResponse = await this.sheets.spreadsheets.values.get({
+                    spreadsheetId,
+                    range: 'Website Metadata!A2:D',  // Skip header row
+                });
+                
+                const rows = dataResponse.data.values || [];
+                console.log(`Retrieved ${rows.length} rows from sheet`);
+                
+                return rows;
+            } catch (error) {
+                console.log('Website Metadata sheet not found:', error.message);
+                
+                // The sheet doesn't exist yet, create it with headers
+                console.log('Creating Website Metadata sheet');
+                await this.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId,
+                    requestBody: {
+                        requests: [
+                            {
+                                addSheet: {
+                                    properties: {
+                                        title: 'Website Metadata'
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                });
+                
+                // Add headers
+                await this.sheets.spreadsheets.values.update({
+                    spreadsheetId,
+                    range: 'Website Metadata!A1:D1',
+                    valueInputOption: 'USER_ENTERED',
+                    requestBody: {
+                        values: [['Title', 'URL', 'Description', 'Date Added']]
+                    }
+                });
+                
+                return []; // Return empty array since sheet was just created
+            }
+        } catch (error) {
+            console.error('Error getting spreadsheet data:', error);
             throw error;
         }
     }
