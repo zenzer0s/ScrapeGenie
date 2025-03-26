@@ -56,14 +56,19 @@ class GoogleService {
         }
     }
 
-    async getSheetData(chatId, page = 1, pageSize = 5) {
+    // Update the getSheetData method to accept a forceRefresh parameter
+    async getSheetData(chatId, page = 1, pageSize = 5, forceRefresh = false) {
         try {
-            stepLogger.info('GOOGLE_SHEET_DATA_REQUEST', { chatId, page });
+            stepLogger.info('GOOGLE_SHEET_DATA_REQUEST', { chatId, page, forceRefresh });
+            
+            // Add cache buster if force refresh
+            const params = { chatId, page, pageSize };
+            if (forceRefresh) {
+                params.t = Date.now(); // Add timestamp to force a fresh request
+            }
             
             // Use the API endpoint
-            const response = await this.api.get('/api/google/sheet-data', {
-                params: { chatId, page, pageSize }
-            });
+            const response = await this.api.get('/api/google/sheet-data', { params });
             
             return response.data;
         } catch (error) {
