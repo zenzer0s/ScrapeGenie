@@ -177,13 +177,17 @@ function createWebsiteButtons(pageData) {
     return { inline_keyboard: buttons };
 }
 
-function createBackButton(pageNumber) {
+function createBackButton(pageNumber, index) {
     return {
         inline_keyboard: [
             [
                 {
                     text: '◀️ Back to list',
                     callback_data: `sheet_page_${pageNumber}`
+                },
+                {
+                    text: '🗑️ Delete',
+                    callback_data: `sheet_delete_${index}`
                 }
             ]
         ]
