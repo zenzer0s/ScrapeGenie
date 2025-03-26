@@ -30,19 +30,14 @@ function formatSheetDataMessage(pageData) {
     return message;
 }
 
+// Also update the original createNavigationButtons function to be consistent
 function createNavigationButtons(currentPage, totalPages) {
     const buttons = [];
     const navRow = [];
     
-    // First button
-    navRow.push({
-        text: '⏮️ First',
-        callback_data: `sheet_page_1`
-    });
-    
     // Previous button
     navRow.push({
-        text: '◀️ Prev',
+        text: '◀️ Previous',
         callback_data: `sheet_page_${Math.max(1, currentPage - 1)}`
     });
     
@@ -56,12 +51,6 @@ function createNavigationButtons(currentPage, totalPages) {
     navRow.push({
         text: 'Next ▶️',
         callback_data: `sheet_page_${Math.min(totalPages, currentPage + 1)}`
-    });
-    
-    // Last button
-    navRow.push({
-        text: '⏭️ Last',
-        callback_data: `sheet_page_${totalPages}`
     });
     
     buttons.push(navRow);
@@ -113,6 +102,7 @@ function formatSheetDetailMessage(entry) {
     return message;
 }
 
+// Update the createWebsiteButtons function to remove First and Last buttons
 function createWebsiteButtons(pageData) {
     const buttons = [];
     
@@ -131,18 +121,12 @@ function createWebsiteButtons(pageData) {
         }]);
     });
     
-    // Navigation row
+    // Navigation row - simplified version with just Prev/Next
     const navRow = [];
-    
-    // First button
-    navRow.push({
-        text: '⏮️ First',
-        callback_data: `sheet_page_1`
-    });
     
     // Previous button
     navRow.push({
-        text: '◀️ Prev',
+        text: '◀️ Previous',
         callback_data: `sheet_page_${Math.max(1, pageData.currentPage - 1)}`
     });
     
@@ -156,12 +140,6 @@ function createWebsiteButtons(pageData) {
     navRow.push({
         text: 'Next ▶️',
         callback_data: `sheet_page_${Math.min(pageData.totalPages, pageData.currentPage + 1)}`
-    });
-    
-    // Last button
-    navRow.push({
-        text: '⏭️ Last',
-        callback_data: `sheet_page_${pageData.totalPages}`
     });
     
     buttons.push(navRow);
