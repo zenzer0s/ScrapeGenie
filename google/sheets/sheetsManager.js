@@ -48,12 +48,65 @@ class GoogleSheetsManager {
     }
 
     async appendWebsiteData(spreadsheetId, data) {
-        if (!this.sheets) throw new Error('Sheets API not initialized');
+        if (!this.sheets) {
+            console.error('[SHEETS_MANAGER] Sheets API not initialized');
+            throw new Error('Sheets API not initialized');
+        }
 
         try {
-            await this.sheets.spreadsheets.values.append({
+            console.log(`[SHEETS_MANAGER] Appending data to sheet: ${spreadsheetId}`);
+            console.log('[SHEETS_MANAGER] Data to append:', data);
+            
+            // First check if the sheet exists
+            const response = await this.sheets.spreadsheets.get({
+                spreadsheetId
+            });
+            
+            console.log(`[SHEETS_MANAGER] Spreadsheet exists: ${response.data.properties.title}`);
+            
+            // Find or create the Website Metadata sheet
+            let sheetExists = false;
+            const sheets = response.data.sheets || [];
+            
+            for (const sheet of sheets) {
+                if (sheet.properties.title === 'Website Metadata') {
+                    sheetExists = true;
+                    break;
+                }
+            }
+            
+            if (!sheetExists) {
+                console.log('[SHEETS_MANAGER] Creating Website Metadata sheet');
+                await this.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId,
+                    requestBody: {
+                        requests: [
+                            {
+                                addSheet: {
+                                    properties: {
+                                        title: 'Website Metadata'
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                });
+                
+                // Add headers
+                await this.sheets.spreadsheets.values.update({
+                    spreadsheetId,
+                    range: 'Website Metadata!A1:D1',
+                    valueInputOption: 'USER_ENTERED',
+                    requestBody: {
+                        values: [['Title', 'URL', 'Description', 'Date Added']]
+                    }
+                });
+            }
+            
+            // Now append the data
+            const appendResponse = await this.sheets.spreadsheets.values.append({
                 spreadsheetId,
-                range: 'Website Metadata',
+                range: 'Website Metadata!A2',
                 valueInputOption: 'USER_ENTERED',
                 requestBody: {
                     values: [[
@@ -64,8 +117,11 @@ class GoogleSheetsManager {
                     ]]
                 }
             });
+            
+            console.log('[SHEETS_MANAGER] Data appended successfully', appendResponse.data);
+            return true;
         } catch (error) {
-            console.error('Error appending data:', error);
+            console.error('[SHEETS_MANAGER] Error appending data:', error);
             throw error;
         }
     }
