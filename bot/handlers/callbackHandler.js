@@ -8,6 +8,11 @@ const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCom
 const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
 const { handleYoutubeCallback } = require('./youtubeHandler');
 
+// Add these imports for Google commands
+const googleConnectCommand = require('../commands/google/googleConnectCommand');
+const googleStatusCommand = require('../commands/google/googleStatusCommand');
+const googleSheetCommand = require('../commands/google/googleSheetCommand');
+
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
 const stepLogger = require('../utils/stepLogger');
@@ -86,6 +91,12 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
       'pinterest_login': () => pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'pinterest_logout': () => pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'pinterest_status': () => pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      
+      // Add these new Google-related handlers
+      'google_connect': () => googleConnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_status': () => googleStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_sheet': () => googleSheetCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      
       'open_settings': async () => {
         try {
           const userId = callbackQuery.from.id.toString();
