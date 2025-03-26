@@ -77,7 +77,124 @@ function createNavigationButtons(currentPage, totalPages) {
     return { inline_keyboard: buttons };
 }
 
+// Create functions for the list-detail view
+
+function formatSheetListMessage(pageData) {
+    if (!pageData || !pageData.entries || pageData.entries.length === 0) {
+        return '📊 *Your Saved Websites*\n\nYou haven\'t saved any websites yet. Send a URL to get started!';
+    }
+
+    let message = `📊 *Your Saved Websites* (Page ${pageData.currentPage} of ${pageData.totalPages})\n\n`;
+    message += `Select a website to view details:\n`;
+    message += `Total entries: ${pageData.totalEntries}`;
+    
+    return message;
+}
+
+function formatSheetDetailMessage(entry) {
+    if (!entry) {
+        return '❌ Website details not found.';
+    }
+    
+    let message = `📝 *Website Details*\n\n`;
+    message += `*Title:* ${entry.title || 'Untitled'}\n\n`;
+    message += `*URL:* ${entry.url || 'No URL'}\n\n`;
+    
+    // Format description
+    const description = entry.description || 'No description';
+    message += `*Description:* ${description}\n\n`;
+    
+    // Format date
+    if (entry.dateAdded) {
+        const date = new Date(entry.dateAdded);
+        message += `*Added:* ${date.toLocaleDateString()}`;
+    }
+    
+    return message;
+}
+
+function createWebsiteButtons(pageData) {
+    const buttons = [];
+    
+    // Create a button for each website
+    pageData.entries.forEach((entry, index) => {
+        let title = entry.title || 'Untitled';
+        
+        // Truncate long titles
+        if (title.length > 25) {
+            title = title.substring(0, 22) + '...';
+        }
+        
+        buttons.push([{
+            text: `${index + 1}. ${title}`,
+            callback_data: `sheet_view_${index}`
+        }]);
+    });
+    
+    // Navigation row
+    const navRow = [];
+    
+    // First button
+    navRow.push({
+        text: '⏮️ First',
+        callback_data: `sheet_page_1`
+    });
+    
+    // Previous button
+    navRow.push({
+        text: '◀️ Prev',
+        callback_data: `sheet_page_${Math.max(1, pageData.currentPage - 1)}`
+    });
+    
+    // Page indicator
+    navRow.push({
+        text: `${pageData.currentPage}/${pageData.totalPages}`,
+        callback_data: 'sheet_noop'
+    });
+    
+    // Next button
+    navRow.push({
+        text: 'Next ▶️',
+        callback_data: `sheet_page_${Math.min(pageData.totalPages, pageData.currentPage + 1)}`
+    });
+    
+    // Last button
+    navRow.push({
+        text: '⏭️ Last',
+        callback_data: `sheet_page_${pageData.totalPages}`
+    });
+    
+    buttons.push(navRow);
+    
+    // Action buttons
+    buttons.push([
+        {
+            text: '🔄 Refresh',
+            callback_data: `sheet_refresh`
+        }
+    ]);
+    
+    return { inline_keyboard: buttons };
+}
+
+function createBackButton(pageNumber) {
+    return {
+        inline_keyboard: [
+            [
+                {
+                    text: '◀️ Back to list',
+                    callback_data: `sheet_page_${pageNumber}`
+                }
+            ]
+        ]
+    };
+}
+
 module.exports = {
     formatSheetDataMessage,
-    createNavigationButtons
+    createNavigationButtons,
+    formatSheetListMessage,
+    formatSheetDetailMessage,
+    createWebsiteButtons,
+    createBackButton
 };
