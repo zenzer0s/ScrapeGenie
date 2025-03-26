@@ -198,6 +198,89 @@ class GoogleSheetsManager {
             throw error;
         }
     }
+
+    // Update this method to get the correct sheet ID
+    async deleteEntryByUrl(spreadsheetId, url) {
+        if (!this.sheets) throw new Error('Sheets API not initialized');
+      
+        try {
+          console.log(`Deleting entry with URL ${url} from sheet: ${spreadsheetId}`);
+          
+          // First get the spreadsheet metadata to find the correct sheet ID
+          const spreadsheet = await this.sheets.spreadsheets.get({
+            spreadsheetId
+          });
+          
+          const sheets = spreadsheet.data.sheets || [];
+          let sheetId = null;
+          let sheetTitle = null;
+          
+          // Find the Website Metadata sheet
+          for (const sheet of sheets) {
+            if (sheet.properties.title === 'Website Metadata') {
+              sheetId = sheet.properties.sheetId;
+              sheetTitle = sheet.properties.title;
+              break;
+            }
+          }
+          
+          if (sheetId === null) {
+            console.error('Website Metadata sheet not found');
+            throw new Error('Website Metadata sheet not found');
+          }
+          
+          console.log(`Found Website Metadata sheet with ID: ${sheetId}`);
+          
+          // Get the data to find the row with the URL
+          const dataResponse = await this.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!A2:D`,  // Skip header row
+          });
+          
+          const rows = dataResponse.data.values || [];
+          
+          // Find the row index where URL matches
+          let rowToDelete = -1;
+          for (let i = 0; i < rows.length; i++) {
+            if (rows[i][1] === url) {  // URL is in column B (index 1)
+              rowToDelete = i + 2;  // +2 because we're skipping header row and sheet is 1-indexed
+              break;
+            }
+          }
+          
+          if (rowToDelete === -1) {
+            console.log(`URL ${url} not found in sheet`);
+            throw new Error('URL not found in sheet');
+          }
+          
+          console.log(`Found URL at row ${rowToDelete}, deleting...`);
+          
+          // Delete the row
+          await this.sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [
+                {
+                  deleteDimension: {
+                    range: {
+                      sheetId: sheetId,  // Use the actual sheet ID we found
+                      dimension: 'ROWS',
+                      startIndex: rowToDelete - 1,  // 0-indexed in the API
+                      endIndex: rowToDelete  // exclusive
+                    }
+                  }
+                }
+              ]
+            }
+          });
+          
+          console.log(`Deleted row ${rowToDelete} successfully`);
+          return true;
+        } catch (error) {
+          console.error('Error deleting entry by URL:', error);
+          throw error;
+        }
+      }
 }
 
 module.exports = new GoogleSheetsManager();
