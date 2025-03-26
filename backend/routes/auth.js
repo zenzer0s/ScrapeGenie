@@ -4,8 +4,6 @@ const { v4: uuidv4 } = require('uuid');
 const sessionManager = require('../services/sessionManager');
 // Force a fresh import of the Pinterest scraper
 const pinterestScraper = require('../scraper/pinterestScraper.js'); // Add .js extension
-console.log('Pinterest module exports:', Object.keys(pinterestScraper));
-console.log('Login function type:', typeof pinterestScraper.loginToPinterest);
 const router = express.Router();
 
 const DEFAULT_BACKEND_URL = `http://0.0.0.0:${process.env.PORT || 8080}`;
