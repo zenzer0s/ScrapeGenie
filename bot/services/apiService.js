@@ -1,7 +1,6 @@
 const axios = require('axios');
 const config = require('../config/botConfig');
 const stepLogger = require('../utils/stepLogger');
-const googleService = require('./googleService');
 
 // Configure axios instance with defaults
 const api = axios.create({
@@ -44,44 +43,6 @@ async function callScrapeApi(url, userId) {
     enhancedError.data = error.response?.data;
     
     throw enhancedError;
-  }
-}
-
-/**
- * Call the scrape API with Google Sheets integration
- * @param {string} url - URL to scrape
- * @param {string|number} userId - User ID
- * @param {string|number} chatId - Chat ID for Sheets integration
- * @returns {Promise<object>} - Scraped data
- */
-async function callScrapeApiWithSheets(url, userId, chatId) {
-  try {
-    // First check if user has Google connected
-    const isConnected = await googleService.checkConnectionStatus(chatId);
-    
-    if (isConnected) {
-      stepLogger.info('GOOGLE_SHEETS_ENABLED', { chatId });
-      
-      // Use the scrape-and-store endpoint
-      const response = await api.post('/api/google/scrape-and-store', {
-        url,
-        chatId
-      });
-      
-      return response.data;
-    } else {
-      // Use regular scraping endpoint
-      return await callScrapeApi(url, userId);
-    }
-  } catch (error) {
-    stepLogger.error('SCRAPE_WITH_SHEETS_ERROR', { 
-      chatId, 
-      url, 
-      error: error.message 
-    });
-    
-    // Fallback to regular scraping
-    return await callScrapeApi(url, userId);
   }
 }
 
@@ -164,7 +125,6 @@ async function logoutPinterest(userId) {
 module.exports = {
   api,
   callScrapeApi,
-  callScrapeApiWithSheets,
   checkBackendHealth,
   getPinterestStatus,
   generatePinterestToken,

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { extractUrls } = require('./utils/urlUtils');
-const { callScrapeApiWithSheets } = require('./services/apiService');
+const { callScrapeApi } = require('./services/apiService');
 const { routeContent } = require('./handlers/contentRouter');
 const { createBatch, submitBatch } = require('./batch/batchProcessor');
 const stepLogger = require('./utils/stepLogger');
@@ -94,7 +94,7 @@ async function processUrlDirectly(bot, chatId, url, userId, messageId) {
       url: url.substring(0, 50)
     });
     
-    const data = await callScrapeApiWithSheets(url, userId, chatId);
+    const data = await callScrapeApi(url, userId);
     
     // Delete the processing message
     try {
