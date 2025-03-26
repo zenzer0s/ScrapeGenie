@@ -48,33 +48,34 @@ async function deleteMessageAfterDelay(bot, chatId, messageId, delay) {
  * @param {function} checkBackendStatus - Function to check backend status
  */
 async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
-  try {
-    const { data: action, message } = callbackQuery;
-    const chatId = message.chat.id;
-    const msg = message;
-    
-    stepLogger.info('CALLBACK_RECEIVED', { action, chatId, userId: callbackQuery.from.id });
-    
-    // Handle sheet-related callbacks
-    if (action.startsWith('sheet_')) {
-      try {
-        const handled = await handleSheetCallback(bot, callbackQuery);
-        if (handled) {
-          stepLogger.info('CALLBACK_HANDLED', {
-            action,
-            chatId,
-            elapsed: Date.now() - startTime,
-          });
-          return;
-        }
-      } catch (error) {
-        stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { chatId });
+  const { data: action, message } = callbackQuery;
+  const chatId = message.chat.id;
+  const startTime = Date.now();
+  
+  stepLogger.info('CALLBACK_RECEIVED', { action, chatId, userId: callbackQuery.from.id });
+  
+  // Handle sheet-related callbacks
+  if (action.startsWith('sheet_')) {
+    try {
+      const handled = await handleSheetCallback(bot, callbackQuery);
+      if (handled) {
+        stepLogger.info('CALLBACK_HANDLED', {
+          action,
+          chatId,
+          elapsed: Date.now() - startTime,
+        });
         return;
       }
+    } catch (error) {
+      stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { chatId });
+      return;
     }
+  }
+  
+  try {
+    const msg = message;
     
     // Rest of your callback handling
-    const startTime = Date.now(); // Initialize startTime to measure elapsed time
     const userId = callbackQuery.from?.id?.toString();
 
     // Validate chatId and userId
