@@ -35,8 +35,43 @@ class SheetsIntegration {
         }
     }
 
-    async checkConnection(userId) {
-        return await tokenStorage.hasTokens(userId);
+    async checkConnection(chatId) {
+        try {
+            console.log(`Checking connection for chatId: ${chatId}`);
+            
+            // Check if we have tokens for this user
+            const userData = await tokenStorage.getTokens(chatId);
+            
+            if (!userData || !userData.tokens) {
+                console.log(`No tokens found for chatId: ${chatId}`);
+                return false;
+            }
+            
+            // Check if we have a spreadsheet ID
+            if (!userData.spreadsheetId) {
+                console.log(`No spreadsheet ID found for chatId: ${chatId}`);
+                return false;
+            }
+            
+            // Try to get a new access token to verify the refresh token works
+            try {
+                // Set credentials and get auth client
+                authHandler.setCredentials(userData.tokens);
+                const authClient = authHandler.getAuthClient();
+                
+                // This will throw if the token is invalid or expired
+                await authClient.getAccessToken();
+                
+                console.log(`Connection verified for chatId: ${chatId}`);
+                return true;
+            } catch (tokenError) {
+                console.error(`Token error for chatId: ${chatId}`, tokenError);
+                return false;
+            }
+        } catch (error) {
+            console.error(`Connection check error for chatId: ${chatId}`, error);
+            return false;
+        }
     }
 
     async storeWebsiteMetadata(chatId, metadata) {
