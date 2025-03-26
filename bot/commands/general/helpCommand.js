@@ -44,6 +44,9 @@ async function helpCommand(bot, msg) {
             { text: '📊 Connect Sheets', callback_data: 'google_connect' },
             { text: '🔍 Sheets Status', callback_data: 'google_status' }
           ],
+          [
+            { text: '📋 View Sheets Data', callback_data: 'google_sheet' }
+          ],
           // Row 5: Settings
           [
             { text: '⚙️ Customize Settings', callback_data: 'toggle_settings' }
@@ -185,6 +188,9 @@ async function handleHelpSettings(bot, query) {
           { text: '📊 Connect Sheets', callback_data: 'google_connect' },
           { text: '🔍 Sheets Status', callback_data: 'google_status' }
         ],
+        [
+          { text: '📋 View Sheets Data', callback_data: 'google_sheet' }
+        ],
         // Row 5: Customize Settings
         [
           { text: '⚙️ Customize Settings', callback_data: 'toggle_settings' }
@@ -199,6 +205,18 @@ async function handleHelpSettings(bot, query) {
       reply_markup: keyboard
     });
     
+    await bot.answerCallbackQuery(query.id);
+    return true;
+  }
+  // For viewing Google Sheets data
+  else if (query.data === 'google_sheet') {
+    // Get the command
+    const { googleSheetCommand } = require('../google');
+    
+    // Call the command with the same params structure as other commands
+    const result = await googleSheetCommand(bot, { chat: { id: chatId }, from: query.from });
+    
+    // Answer the callback query
     await bot.answerCallbackQuery(query.id);
     return true;
   }
