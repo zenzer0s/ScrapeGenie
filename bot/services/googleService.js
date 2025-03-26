@@ -55,6 +55,22 @@ class GoogleService {
             throw new Error('Failed to disconnect Google account');
         }
     }
+
+    async getSheetData(chatId, page = 1, pageSize = 5) {
+        try {
+            stepLogger.info('GOOGLE_SHEET_DATA_REQUEST', { chatId, page });
+            
+            // Use the API endpoint
+            const response = await this.api.get('/api/google/sheet-data', {
+                params: { chatId, page, pageSize }
+            });
+            
+            return response.data;
+        } catch (error) {
+            stepLogger.error(`GOOGLE_SHEET_DATA_ERROR: ${error.message}`, { chatId });
+            throw new Error('Failed to retrieve sheet data');
+        }
+    }
 }
 
 router.get('/status', async (req, res) => {
