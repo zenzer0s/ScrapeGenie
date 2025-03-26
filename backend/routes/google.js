@@ -35,17 +35,23 @@ router.get('/callback', async (req, res) => {
         const { code, state } = req.query;
         
         if (!code) {
+            console.error('[CALLBACK] Missing code parameter');
             throw new Error('Authorization code is missing');
         }
         
-        console.log('Received authorization code:', code);
-        console.log('State:', state);
+        console.log('[CALLBACK] Received authorization code');
         
         // Decode state to get chatId
         const chatId = Buffer.from(state, 'base64').toString();
+        console.log(`[CALLBACK] Decoded chatId: ${chatId}`);
         
+        // Get tokens
         const tokens = await authHandler.getTokens(code);
+        console.log('[CALLBACK] Retrieved tokens successfully');
+        
+        // Setup user's sheet
         const setupResult = await sheetsIntegration.setupUserSheet(chatId, tokens);
+        console.log(`[CALLBACK] Sheet setup complete: ${setupResult.spreadsheetId}`);
         
         // Success message
         res.send(`
@@ -58,7 +64,7 @@ router.get('/callback', async (req, res) => {
             </html>
         `);
     } catch (error) {
-        console.error('Google auth callback error:', error);
+        console.error('[CALLBACK] Error:', error);
         res.status(500).send(`
             <html>
                 <body>
@@ -107,6 +113,54 @@ router.post('/disconnect', async (req, res) => {
         console.error('Disconnect error:', error);
         res.status(500).json({ error: error.message });
     }
+});
+
+// Add to your routes/google.js
+router.post('/scrape-and-store', async (req, res) => {
+  try {
+    const { url, chatId } = req.body;
+    
+    if (!url || !chatId) {
+      return res.status(400).json({ error: 'URL and chat ID are required' });
+    }
+    
+    // First check if user is connected
+    const isConnected = await sheetsIntegration.checkConnection(chatId);
+    
+    if (!isConnected) {
+      return res.status(401).json({ 
+        error: 'User not connected to Google Sheets' 
+      });
+    }
+    
+    // Scrape the website
+    const scraper = require('../scraper/scraper');
+    const result = await scraper.scrapeWebsite(url);
+    
+    try {
+      // Store in Google Sheets
+      await sheetsIntegration.storeWebsiteMetadata(chatId, {
+        title: result.title,
+        url: result.originalUrl,
+        description: result.content
+      });
+      
+      // Important: Add this flag so the bot knows to show the confirmation
+      result.sheetUpdated = true;
+    } catch (sheetError) {
+      console.error(`Sheet storage error: ${sheetError.message}`);
+      // Don't fail the entire request if sheet update fails
+      result.sheetUpdated = false;
+    }
+    
+    return res.json(result);
+  } catch (error) {
+    console.error('Scrape and store error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
 module.exports = router;
