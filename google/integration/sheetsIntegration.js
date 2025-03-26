@@ -39,22 +39,40 @@ class SheetsIntegration {
         return await tokenStorage.hasTokens(userId);
     }
 
-    async storeWebsiteMetadata(userId, metadata) {
+    async storeWebsiteMetadata(chatId, metadata) {
         try {
-            const userData = await tokenStorage.getTokens(userId);
+            console.log(`[SHEETS] Storing metadata for user ${chatId}:`, metadata);
+            
+            const userData = await tokenStorage.getTokens(chatId);
             
             if (!userData) {
+                console.error(`[SHEETS] No tokens found for user ${chatId}`);
                 throw new Error('User not connected to Google Sheets');
             }
             
-            const auth = authHandler.setCredentials(userData.tokens);
-            sheetsManager.initializeSheets(auth);
+            console.log(`[SHEETS] Retrieved user data for ${chatId}:`, {
+                spreadsheetId: userData.spreadsheetId,
+                tokensExist: !!userData.tokens
+            });
             
+            // Get auth client with tokens
+            authHandler.setCredentials(userData.tokens);
+            const authClient = authHandler.getAuthClient();
+            
+            console.log(`[SHEETS] Auth client created for ${chatId}`);
+            
+            // Initialize sheets with auth client
+            sheetsManager.initializeSheets(authClient);
+            
+            console.log(`[SHEETS] Sheets initialized, appending data to ${userData.spreadsheetId}`);
+            
+            // Store the metadata
             await sheetsManager.appendWebsiteData(userData.spreadsheetId, metadata);
             
+            console.log(`[SHEETS] Metadata stored successfully for ${chatId}`);
             return true;
         } catch (error) {
-            console.error('Failed to store metadata:', error);
+            console.error(`[SHEETS] Failed to store metadata for ${chatId}:`, error);
             throw error;
         }
     }
