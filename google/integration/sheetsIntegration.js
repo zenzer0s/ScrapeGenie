@@ -81,21 +81,14 @@ class SheetsIntegration {
 
     async checkConnection(chatId) {
         try {
-            console.log(`Checking connection for chatId: ${chatId}`);
-            
-            // Use this.tokenStorage instead of tokenStorage
             const userData = await this.tokenStorage.getTokens(chatId);
             
             if (!userData || !userData.tokens || !userData.spreadsheetId) {
-                console.log(`No connection data found for chatId: ${chatId}`);
                 return false;
             }
             
-            // Set up authentication
             this.authHandler.setCredentials(userData.tokens);
             const authClient = this.authHandler.getAuthClient();
-            
-            // Test the connection by getting spreadsheet data
             this.sheetsManager.initializeSheets(authClient);
             
             // Try to access the spreadsheet to verify connection
@@ -104,8 +97,65 @@ class SheetsIntegration {
             console.log(`Connection successful for chatId: ${chatId}`);
             return true;
         } catch (error) {
-            console.error(`Connection check error for chatId: ${chatId}`, error);
+            console.error(`Connection check error: ${error.message}`);
             return false;
+        }
+    }
+
+    async getSheetData(chatId, page = 1, pageSize = 5) {
+        try {
+            console.log(`Getting sheet data for chatId: ${chatId}`);
+            
+            const isConnected = await this.checkConnection(chatId);
+            
+            if (!isConnected) {
+                throw new Error('User is not connected to Google Sheets');
+            }
+            
+            console.log(`User is connected to Google Sheets`);
+            
+            const userData = await this.tokenStorage.getTokens(chatId);
+            console.log(`Using spreadsheet ID: ${userData.spreadsheetId}`);
+            
+            // Get data from spreadsheet
+            const data = await this.sheetsManager.getSpreadsheetData(userData.spreadsheetId);
+            
+            // Skip header row and handle pagination
+            const entries = [];
+            const headerRow = data[0] || [];
+            
+            // Get column indices
+            const titleIndex = headerRow.indexOf('Title');
+            const urlIndex = headerRow.indexOf('URL');
+            const descriptionIndex = headerRow.indexOf('Description');
+            const dateAddedIndex = headerRow.indexOf('Date Added');
+            
+            // Process rows (skip header)
+            for (let i = 1; i < data.length; i++) {
+                const row = data[i];
+                entries.push({
+                    title: row[titleIndex] || 'Untitled',
+                    url: row[urlIndex] || '',
+                    description: row[descriptionIndex] || '',
+                    dateAdded: row[dateAddedIndex] || new Date().toISOString()
+                });
+            }
+            
+            // Paginate results
+            const startIndex = (page - 1) * pageSize;
+            const paginatedEntries = entries.slice(startIndex, startIndex + pageSize);
+            
+            console.log(`Retrieved ${entries.length} entries, returning page ${page} with ${paginatedEntries.length} items`);
+            
+            return {
+                entries: paginatedEntries,
+                currentPage: page,
+                totalPages: Math.ceil(entries.length / pageSize) || 1,
+                totalEntries: entries.length
+            };
+        } catch (error) {
+            console.error(`Error getting sheet data: ${error.message}`);
+            throw error;
         }
     }
 
