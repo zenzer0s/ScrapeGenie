@@ -7,30 +7,18 @@ let isInitialized = false;
  * @param {OAuth2Client} authClient - Authenticated OAuth2 client
  */
 function initializeSheets(authClient) {
-    try {
-        if (!authClient) {
-            throw new Error('Auth client is required');
-        }
-        
-        if (sheets) {
-            console.log('Google Sheets API already initialized, skipping');
-            return;
-        }
-        
-        console.log('Initializing Google Sheets API');
-        sheets = google.sheets({ version: 'v4', auth: authClient });
-        drive = google.drive({ version: 'v3', auth: authClient });
-        
-        // Verify that the sheets and drive objects are properly initialized
-        if (!sheets || !drive) {
-            throw new Error('Failed to initialize Google API clients');
-        }
-        
-        console.log('Google Sheets API initialized');
-    } catch (error) {
-        console.error(`Error initializing Sheets API: ${error}`);
-        throw error;
+    if (!authClient) {
+        throw new Error('Auth client is required');
     }
+    
+    if (sheets) {
+        return;
+    }
+    
+    console.log('Initializing Google Sheets API');
+    sheets = google.sheets({ version: 'v4', auth: authClient });
+    drive = google.drive({ version: 'v3', auth: authClient });
+    console.log('Google Sheets API initialized');
 }
 
 /**
@@ -39,47 +27,53 @@ function initializeSheets(authClient) {
  * @returns {Promise<string>} - ID of the created spreadsheet
  */
 async function createSpreadsheet(title) {
-  if (!sheets) {
-    throw new Error('Sheets API not initialized');
-  }
-  
-  try {
-    const response = await sheets.spreadsheets.create({
-      resource: {
-        properties: {
-          title: title
-        },
-        sheets: [
-          {
-            properties: {
-              title: 'Website Metadata',
-              gridProperties: {
-                rowCount: 1000,
-                columnCount: 4
-              }
+    try {
+        console.log(`Creating spreadsheet: ${title}`);
+        
+        if (!sheets || !drive) {
+            throw new Error('Google Sheets API not initialized');
+        }
+        
+        // Create a new spreadsheet
+        const response = await sheets.spreadsheets.create({
+            resource: {
+                properties: {
+                    title: title
+                },
+                sheets: [
+                    {
+                        properties: {
+                            title: 'Sheet1',  // Explicitly name the sheet "Sheet1"
+                            gridProperties: {
+                                rowCount: 1000,
+                                columnCount: 26
+                            }
+                        }
+                    }
+                ]
             }
-          }
-        ]
-      }
-    });
-    
-    console.log(`Spreadsheet created with ID: ${response.data.spreadsheetId}`);
-    
-    // Set up header row
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: response.data.spreadsheetId,
-      range: 'Website Metadata!A1:D1',
-      valueInputOption: 'RAW',
-      resource: {
-        values: [['Title', 'URL', 'Description', 'Date Added']]
-      }
-    });
-    
-    return response.data.spreadsheetId;
-  } catch (error) {
-    console.error('Error creating spreadsheet:', error);
-    throw error;
-  }
+        });
+        
+        const spreadsheetId = response.data.spreadsheetId;
+        console.log(`Spreadsheet created with ID: ${spreadsheetId}`);
+        
+        // Initialize the sheet with headers
+        await sheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId,
+            range: 'Sheet1!A1:D1',
+            valueInputOption: 'RAW',
+            resource: {
+                values: [['Title', 'URL', 'Description', 'Date Added']]
+            }
+        });
+        
+        console.log('Added headers to spreadsheet');
+        
+        return spreadsheetId;
+    } catch (error) {
+        console.error(`Error creating spreadsheet: ${error.message}`);
+        throw error;
+    }
 }
 
 /**
@@ -87,24 +81,44 @@ async function createSpreadsheet(title) {
  * @param {string} spreadsheetId - ID of the spreadsheet
  * @returns {Promise<Array>} - Array of rows
  */
-async function getSpreadsheetData(spreadsheetId) {
-  if (!sheets) {
-    throw new Error('Sheets API not initialized');
-  }
-  
-  try {
-    // Get all values from the sheet
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Website Metadata!A2:D'  // Skip header row
-    });
-    
-    const rows = response.data.values || [];
-    return rows;
-  } catch (error) {
-    console.error('Error getting spreadsheet data:', error);
-    throw error;
-  }
+async function getSpreadsheetData(spreadsheetId, range = null) {
+    try {
+        if (!sheets) {
+            throw new Error('Google Sheets API not initialized');
+        }
+        
+        // First, get information about the spreadsheet to find the first sheet name
+        if (!range) {
+            const spreadsheet = await sheets.spreadsheets.get({
+                spreadsheetId
+            });
+            
+            if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
+                throw new Error('Spreadsheet has no sheets');
+            }
+            
+            const firstSheetName = spreadsheet.data.sheets[0].properties.title;
+            range = `${firstSheetName}!A1:Z1000`;
+            console.log(`Using sheet name: ${firstSheetName}`);
+        }
+        
+        // Now get the data using the determined range
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range
+        });
+        
+        const rows = response.data.values || [];
+        
+        if (rows.length > 1) {
+            console.log(`Retrieved ${rows.length - 1} entries`);
+        }
+        
+        return rows;
+    } catch (error) {
+        console.error(`Error getting spreadsheet data: ${error.message}`);
+        throw error;
+    }
 }
 
 /**
@@ -145,30 +159,31 @@ async function appendRow(spreadsheetId, values, range = 'Website Metadata!A:D') 
  */
 async function deleteEntryByUrl(spreadsheetId, url) {
     try {
-        console.log(`Deleting entry with URL ${url} from sheet: ${spreadsheetId}`);
+        console.log(`Deleting entry with URL ${url}`);
         
         if (!sheets) {
-            throw new Error('Google Sheets API not initialized. Call initializeSheets() first.');
+            throw new Error('Google Sheets API not initialized');
         }
         
-        // First, get the spreadsheet metadata to find the actual sheetId
+        // First, get the spreadsheet metadata
         const spreadsheet = await sheets.spreadsheets.get({
-            spreadsheetId: spreadsheetId
+            spreadsheetId
         });
         
-        // Check if the spreadsheet has sheets
         if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
             throw new Error('Spreadsheet has no sheets');
         }
         
-        // Get the first sheet ID (which is typically where data is stored)
-        const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
+        // Get the first sheet info
+        const firstSheet = spreadsheet.data.sheets[0];
+        const sheetId = firstSheet.properties.sheetId;
+        const sheetName = firstSheet.properties.title;
         
-        // Now get the data to find the row
-        const data = await getSpreadsheetData(spreadsheetId);
+        // Get data using the actual sheet name
+        const data = await getSpreadsheetData(spreadsheetId, `${sheetName}!A1:Z1000`);
         
         // Find the row with the matching URL
-        const urlColumnIndex = 1; // Assuming URL is in column B (index 1)
+        const urlColumnIndex = 1; // URL is in column B
         let rowToDelete = -1;
         
         for (let i = 0; i < data.length; i++) {
@@ -186,25 +201,23 @@ async function deleteEntryByUrl(spreadsheetId, url) {
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId,
             requestBody: {
-                requests: [
-                    {
-                        deleteDimension: {
-                            range: {
-                                sheetId: sheetId, // Using the real sheet ID instead of hardcoded 0
-                                dimension: "ROWS",
-                                startIndex: rowToDelete - 1, // 0-indexed
-                                endIndex: rowToDelete // exclusive
-                            }
+                requests: [{
+                    deleteDimension: {
+                        range: {
+                            sheetId: sheetId,
+                            dimension: "ROWS",
+                            startIndex: rowToDelete - 1,
+                            endIndex: rowToDelete
                         }
                     }
-                ]
+                }]
             }
         });
         
         console.log(`Successfully deleted entry with URL: ${url}`);
         return true;
     } catch (error) {
-        console.error(`Error deleting entry by URL: ${error}`);
+        console.error(`Error deleting entry: ${error.message}`);
         throw error;
     }
 }
