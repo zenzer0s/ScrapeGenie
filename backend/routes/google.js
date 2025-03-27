@@ -96,7 +96,7 @@ router.delete('/sheet-entry', async (req, res) => {
     const { chatId, url } = req.body;
     
     if (!chatId || !url) {
-      return res.status(400).json({ error: 'Chat ID and URL required' });
+      return res.status(400).json({ error: 'Missing required fields: chatId and url' });
     }
     
     console.log(`Deleting sheet entry for chatId: ${chatId}, URL: ${url}`);
@@ -105,35 +105,29 @@ router.delete('/sheet-entry', async (req, res) => {
     const isConnected = await sheetsIntegration.checkConnection(chatId);
     
     if (!isConnected) {
-      return res.status(401).json({ error: 'User not connected to Google Sheets' });
+      return res.status(400).json({ error: 'User is not connected to Google Sheets' });
     }
     
-    // Get user data and authenticate
+    // Get user data with spreadsheet ID
     const userData = await tokenStorage.getTokens(chatId);
     
-    if (!userData || !userData.tokens) {
-      console.error('No tokens found for user', chatId);
-      return res.status(401).json({ error: 'Authentication required' });
+    if (!userData || !userData.spreadsheetId) {
+      return res.status(400).json({ error: 'No spreadsheet found for user' });
     }
     
-    if (!userData.spreadsheetId) {
-      console.error('No spreadsheet ID found for user', chatId);
-      return res.status(404).json({ error: 'Spreadsheet not found' });
-    }
-    
-    // Set up authentication
+    // Set up auth client with user's tokens
     authHandler.setCredentials(userData.tokens);
     const authClient = authHandler.getAuthClient();
     
-    // Initialize sheets with auth client
+    // Initialize sheets API with auth client
     sheetsManager.initializeSheets(authClient);
     
-    // Delete the entry from the sheet
+    // Delete entry by URL
     await sheetsManager.deleteEntryByUrl(userData.spreadsheetId, url);
     
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting sheet entry:', error);
+    console.error(`Error deleting sheet entry: ${error}`);
     res.status(500).json({ error: error.message });
   }
 });
