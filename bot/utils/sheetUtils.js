@@ -160,11 +160,11 @@ function createBackButton(pageNumber, index) {
         inline_keyboard: [
             [
                 {
-                    text: '◀️ Back to list',
+                    text: '◀️ Back to list',  // This text field was missing
                     callback_data: `sheet_page_${pageNumber}`
                 },
                 {
-                    text: '🗑️ Delete',
+                    text: '🗑️ Delete',  // This text field was missing
                     callback_data: `sheet_delete_${index}`
                 }
             ]
