@@ -80,6 +80,36 @@ async function handleGenericWebsite(bot, chatId, url, data) {
       chatId, 
       messageLength: message.length 
     });
+
+    // After sending the message to the user, try to store in Google Sheets
+    try {
+      const googleService = require('../services/googleService');
+      
+      // Check if user has connected Google
+      const isConnected = await googleService.checkConnectionStatus(chatId);
+      
+      if (isConnected) {
+        stepLogger.info('GOOGLE_SHEETS_ENABLED', { chatId });
+        
+        // Store website metadata in Google Sheets
+        await googleService.storeWebsiteMetadata(chatId, {
+          title: data.title,
+          url: url,
+          description: data.content
+        });
+        
+        // Send a confirmation message
+        await bot.sendMessage(chatId, "✅ Website saved to your Google Sheets");
+        
+        stepLogger.success('GOOGLE_SHEETS_UPDATED', { chatId, url });
+      }
+    } catch (googleError) {
+      stepLogger.error('GOOGLE_SHEETS_ERROR', { 
+        chatId, 
+        error: googleError.message 
+      });
+      // Continue even if Google Sheets update fails
+    }
   } catch (error) {
     stepLogger.error('GENERIC_HANDLER_ERROR', { 
       chatId, 
