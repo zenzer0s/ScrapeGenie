@@ -9,25 +9,23 @@ async function googleConnectCommand(bot, msg) {
         // Get auth URL from backend
         const authUrl = await googleService.getAuthUrl(chatId);
         
-        const connectButton = {
-            inline_keyboard: [[
-                { 
-                    text: '🔗 Connect Google Sheets', 
-                    url: authUrl 
-                }
-            ]]
-        };
+        const message = await bot.sendMessage(chatId, '🔄 Preparing Google Sheets connection...');
 
-        const sentMessage = await bot.sendMessage(
-            chatId,
-            '📊 Connect your Google account to store scraped website data:\n\n' +
+        // Short message with a button that triggers a callback instead of direct URL
+        await bot.editMessageText('📊 Connect your Google account to store scraped website data:\n\n' +
             '1. Click the button below\n' +
             '2. Sign in with your Google account\n' +
-            '3. Allow ScrapeGenie to access Google Sheets',
-            { reply_markup: connectButton }
-        );
+            '3. Allow ScrapeGenie to access Google Sheets', {
+            chat_id: chatId,
+            message_id: message.message_id,
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '🔗 Connect Google Sheets', callback_data: 'google_auth_url' }]
+                ]
+            }
+        });
 
-        return { sentMessage, userMessageId: msg.message_id };
+        return { sentMessage: message, userMessageId: msg.message_id };
 
     } catch (error) {
         stepLogger.error('CMD_GOOGLE_CONNECT_ERROR', { chatId, error: error.message });
