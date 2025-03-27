@@ -7,6 +7,150 @@ const {
     createBackButton 
 } = require('../utils/sheetUtils');
 
+async function handleSheetCallback(bot, query) {
+    const chatId = query.message.chat.id;
+    const action = query.data;
+    const startTime = Date.now();
+    
+    try {
+        if (action.startsWith('sheet_page_')) {
+            const page = parseInt(action.split('_').pop());
+            return await handleSheetNavigation(bot, query, page);
+        } 
+        
+        if (action.startsWith('sheet_view_')) {
+            const index = parseInt(action.split('_').pop());
+            return await handleSheetEntryView(bot, query, index);
+        }
+        
+        if (action.startsWith('sheet_delete_confirm_')) {
+            const parts = action.split('_');
+            const index = parseInt(parts[3]);
+            const pageNumber = parseInt(parts[4]);
+            return await handleWebsiteDeleteConfirm(bot, query, index, pageNumber);
+        }
+        
+        if (action.startsWith('sheet_delete_')) {
+            const index = parseInt(action.split('_').pop());
+            return await handleWebsiteDelete(bot, query, index);
+        }
+        
+        if (action === 'sheet_refresh') {
+            return await handleSheetNavigation(bot, query, 1, true);
+        }
+        
+        if (action === 'sheet_noop') {
+            await bot.answerCallbackQuery(query.id);
+            return true;
+        }
+        
+        return false; // Not handled
+    } catch (error) {
+        // Handle "message not modified" errors gracefully
+        if (error.message && error.message.includes('message is not modified')) {
+            await bot.answerCallbackQuery(query.id);
+            return true;
+        }
+        
+        stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { chatId, action });
+        
+        // Let the user know there was an error
+        try {
+            await bot.answerCallbackQuery(query.id, {
+                text: '❌ Error: ' + error.message,
+                show_alert: true
+            });
+        } catch (e) {
+            // Ignore errors answering callback query
+        }
+        
+        return false;
+    } finally {
+        stepLogger.debug('SHEET_CALLBACK_COMPLETED', {
+            action,
+            chatId,
+            elapsed: Date.now() - startTime
+        });
+    }
+}
+
+// Add this new function to handle viewing a specific entry
+async function handleSheetEntryView(bot, query, index) {
+    const chatId = query.message.chat.id;
+    const messageId = query.message.message_id;
+    
+    try {
+        // Get current page from button data
+        let currentPage = 1; // Default to page 1
+        
+        try {
+            const buttonRows = query.message.reply_markup.inline_keyboard;
+            if (buttonRows && buttonRows.length >= 2) {
+                const navRow = buttonRows[buttonRows.length - 2]; // Navigation row is second to last
+                if (navRow && navRow.length >= 2) {
+                    const pageButton = navRow[1]; // Middle button shows current page (now at index 1)
+                    if (pageButton && pageButton.text) {
+                        const pageParts = pageButton.text.split('/');
+                        if (pageParts.length >= 1) {
+                            currentPage = parseInt(pageParts[0]) || 1;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            stepLogger.warn('Failed to extract page number from button data', { 
+                error: err.message, 
+                fallbackPage: 1 
+            });
+            // Continue with default page 1
+        }
+        
+        stepLogger.info('SHEET_ENTRY_VIEW', { 
+            chatId, 
+            entryIndex: index
+        });
+        
+        // Fetch data for the current page
+        const pageData = await googleService.getSheetData(chatId, currentPage);
+        
+        // Get the selected website
+        const selectedWebsite = pageData.entries[index];
+        
+        if (!selectedWebsite) {
+            await bot.answerCallbackQuery(query.id, {
+                text: '❌ Website not found',
+                show_alert: true
+            });
+            return false;
+        }
+        
+        // Format the website details
+        const detailMessage = formatSheetDetailMessage(selectedWebsite);
+        
+        // Create back button with delete option
+        const backButton = createBackButton(currentPage, index);
+        
+        // Update the message with website details
+        await bot.editMessageText(detailMessage, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: backButton  // This is correct if backButton has the right format
+        });
+        
+        // Answer the callback query
+        await bot.answerCallbackQuery(query.id);
+        return true;
+    } catch (error) {
+        stepLogger.error(`SHEET_ENTRY_VIEW_ERROR: ${error.message}`, { chatId, entryIndex: index });
+        await bot.answerCallbackQuery(query.id, {
+            text: '❌ Failed to view website details',
+            show_alert: true
+        });
+        throw error;
+    }
+}
+
 // Update the handleSheetNavigation function
 async function handleSheetNavigation(bot, query, page, forceRefresh = false) {
     const chatId = query.message.chat.id;
@@ -314,74 +458,34 @@ async function handleWebsiteDeleteConfirm(bot, query, index, pageNumber) {
     }
 }
 
-// Update the handleSheetCallback function
-async function handleSheetCallback(bot, query) {
-    const chatId = query.message.chat.id;
-    const action = query.data;
-    const startTime = Date.now();
+// In handleViewSheetEntry function:
+async function handleViewSheetEntry(bot, chatId, userId, index) {
+  try {
+    // ...existing code...
     
-    try {
-        if (action.startsWith('sheet_page_')) {
-            const page = parseInt(action.split('_').pop());
-            return await handleSheetNavigation(bot, query, page);
-        } 
-        
-        if (action.startsWith('sheet_view_')) {
-            const index = parseInt(action.split('_').pop());
-            return await handleWebsiteView(bot, query, index);
-        }
-        
-        if (action.startsWith('sheet_delete_confirm_')) {
-            const parts = action.split('_');
-            const index = parseInt(parts[3]);
-            const pageNumber = parseInt(parts[4]);
-            return await handleWebsiteDeleteConfirm(bot, query, index, pageNumber);
-        }
-        
-        if (action.startsWith('sheet_delete_')) {
-            const index = parseInt(action.split('_').pop());
-            return await handleWebsiteDelete(bot, query, index);
-        }
-        
-        if (action === 'sheet_refresh') {
-            return await handleSheetNavigation(bot, query, 1, true);
-        }
-        
-        if (action === 'sheet_noop') {
-            await bot.answerCallbackQuery(query.id);
-            return true;
-        }
-        
-        return false; // Not handled
-    } catch (error) {
-        // Handle "message not modified" errors gracefully
-        if (error.message && error.message.includes('message is not modified')) {
-            await bot.answerCallbackQuery(query.id);
-            return true;
-        }
-        
-        stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { chatId, action });
-        
-        // Let the user know there was an error
-        try {
-            await bot.answerCallbackQuery(query.id, {
-                text: '❌ Error: ' + error.message,
-                show_alert: true
-            });
-        } catch (e) {
-            // Ignore errors answering callback query
-        }
-        
-        return false;
-    } finally {
-        stepLogger.debug('SHEET_CALLBACK_COMPLETED', {
-            action,
-            chatId,
-            elapsed: Date.now() - startTime
-        });
+    // Format the message - fix HTML entity escaping
+    let message = `<b>🔍 Website Details</b>\n\n`;
+    
+    // Escape special HTML characters in title and description
+    const safeTitle = entry.title ? entry.title.replace(/</g, '&lt;').replace(/>/g, '&gt;') : 'N/A';
+    message += `<b>Title:</b> ${safeTitle}\n\n`;
+    
+    if (entry.description) {
+      // Truncate description if too long and escape HTML entities
+      let safeDescription = entry.description.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      safeDescription = safeDescription.length > 200 
+        ? safeDescription.substring(0, 197) + '...' 
+        : safeDescription;
+      
+      message += `<b>Description:</b> ${safeDescription}\n\n`;
     }
+    
+    // ...rest of the function...
+  } catch (error) {
+    // ...error handling...
+  }
 }
 
 module.exports = {
-    handleSheetCallback
+  handleSheetCallback
 };
