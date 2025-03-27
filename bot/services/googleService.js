@@ -57,55 +57,36 @@ class GoogleService {
         }
     }
 
-    // Update the getSheetData method with more detailed logging
+    // Reduce logs in getSheetData
     async getSheetData(chatId, page = 1, pageSize = 5, forceRefresh = false) {
         try {
-            // More detailed logging
-            stepLogger.info('GOOGLE_SHEET_DATA_REQUEST', { 
+            // Remove excessive logging, keep only essential info
+            const logData = {
                 chatId, 
                 page, 
                 pageSize,
-                forceRefresh,
-                timestamp: new Date().toISOString(), // Add timestamp for debugging
-                requestId: `sheet-req-${Date.now()}` // Add unique request ID
-            });
+                forceRefresh: forceRefresh ? true : undefined
+            };
             
-            // Add cache buster if force refresh
-            const params = { chatId, page, pageSize };
             if (forceRefresh) {
-                params.t = Date.now(); // Add timestamp to force a fresh request
-                stepLogger.info('GOOGLE_SHEET_REFRESH', { chatId, timestamp: params.t });
+                stepLogger.info('GOOGLE_SHEET_REFRESH', logData);
             }
             
-            // Log before making the request
-            stepLogger.debug('GOOGLE_SHEET_API_CALL', {
-                endpoint: '/api/google/sheet-data',
-                params: JSON.stringify(params)
-            });
-            
             // Use the API endpoint
-            const response = await this.api.get('/api/google/sheet-data', { params });
-            
-            // Log response details
-            stepLogger.info('GOOGLE_SHEET_DATA_RECEIVED', {
-                chatId,
-                entriesCount: response.data?.entries?.length || 0,
-                totalEntries: response.data?.totalEntries || 0,
-                currentPage: response.data?.currentPage || page,
-                totalPages: response.data?.totalPages || 1,
-                responseTime: `${Date.now() - (forceRefresh ? params.t : 0)}ms`
+            const response = await this.api.get('/api/google/sheet-data', { 
+                params: { 
+                    chatId, 
+                    page, 
+                    pageSize,
+                    // Add cache buster if forcing refresh
+                    ...(forceRefresh ? { t: Date.now() } : {})
+                }
             });
             
             return response.data;
         } catch (error) {
-            // Enhanced error logging
-            stepLogger.error(`GOOGLE_SHEET_DATA_ERROR: ${error.message}`, { 
-                chatId,
-                page,
-                forceRefresh,
-                errorCode: error.response?.status || 'unknown',
-                errorData: error.response?.data ? JSON.stringify(error.response.data) : 'none'
-            });
+            // Keep error logging
+            stepLogger.error(`GOOGLE_SHEET_DATA_ERROR: ${error.message}`, { chatId, page });
             throw new Error('Failed to retrieve sheet data');
         }
     }
