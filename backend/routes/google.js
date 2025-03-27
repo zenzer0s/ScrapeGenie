@@ -1,13 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const scraperBridge = require('../../google/integration/scraperSheetsBridge');
+const TokenStorage = require('../../google/storage/tokenStorage');
+const AuthHandler = require('../../google/auth/authHandler');
+const SheetsManager = require('../../google/sheets/sheetsManager');
+const SheetsIntegration = require('../../google/integration/sheetsIntegration');
 const { GOOGLE_CONFIG } = require('../../google/config/config');
-const authHandler = require('../../google/auth/authHandler');
-const sheetsIntegration = require('../../google/integration/sheetsIntegration');
+
+// Create instances - only once
 const tokenStorage = require('../../google/storage/tokenStorage');
+const authHandler = require('../../google/auth/authHandler');
 const sheetsManager = require('../../google/sheets/sheetsManager');
 
-// Add this simple endpoint
+// Create a single instance of SheetsIntegration
+const sheetsIntegration = new SheetsIntegration(tokenStorage, authHandler, sheetsManager);
+
 router.get('/sheet-data', async (req, res) => {
   try {
     const { chatId, page = 1, pageSize = 5 } = req.query;
@@ -46,6 +52,10 @@ router.get('/sheet-data', async (req, res) => {
     authHandler.setCredentials(userData.tokens);
     const authClient = authHandler.getAuthClient();
     
+    // Add a small delay before initializing to prevent race conditions
+    // when multiple requests come in at once
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
     // Initialize sheets with auth client
     sheetsManager.initializeSheets(authClient);
     
@@ -81,7 +91,6 @@ router.get('/sheet-data', async (req, res) => {
   }
 });
 
-// Add this new endpoint
 router.delete('/sheet-entry', async (req, res) => {
   try {
     const { chatId, url } = req.body;
@@ -129,19 +138,82 @@ router.delete('/sheet-entry', async (req, res) => {
   }
 });
 
-// Make sure these other routes still work
+router.post('/store-metadata', async (req, res) => {
+  try {
+    const { chatId, metadata } = req.body;
+    
+    if (!chatId || !metadata || !metadata.url) {
+      return res.status(400).json({ error: 'Chat ID and valid metadata required' });
+    }
+    
+    console.log(`Storing metadata for chatId: ${chatId}, URL: ${metadata.url}`);
+    
+    // Check if user is connected
+    const isConnected = await sheetsIntegration.checkConnection(chatId);
+    
+    if (!isConnected) {
+      return res.status(401).json({ error: 'User not connected to Google Sheets' });
+    }
+    
+    // Get user data and authenticate
+    const userData = await tokenStorage.getTokens(chatId);
+    
+    if (!userData || !userData.tokens) {
+      console.error('No tokens found for user', chatId);
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    if (!userData.spreadsheetId) {
+      console.error('No spreadsheet ID found for user', chatId);
+      return res.status(404).json({ error: 'Spreadsheet not found' });
+    }
+    
+    // Set up authentication
+    authHandler.setCredentials(userData.tokens);
+    const authClient = authHandler.getAuthClient();
+    
+    // Initialize sheets with auth client
+    sheetsManager.initializeSheets(authClient);
+    
+    // Store the metadata - this was the line with the error
+    // Make sure we're calling the function correctly
+    await sheetsManager.appendRow(
+      userData.spreadsheetId, 
+      [
+        metadata.title || 'Untitled',
+        metadata.url,
+        metadata.description || 'No description',
+        new Date().toISOString() // Add timestamp
+      ]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error storing metadata:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/auth-url', async (req, res) => {
   try {
     const { chatId } = req.query;
+    
     if (!chatId) {
-      return res.status(400).json({ error: 'Chat ID required' });
+      return res.status(400).json({ error: 'chatId is required' });
     }
     
-    // Generate state with chatId for callback
+    console.log(`Generating auth URL for chatId: ${chatId}`);
+    
+    // Generate a state parameter that includes the chatId (for security)
     const state = Buffer.from(chatId).toString('base64');
+    
+    // Generate the authentication URL
     const authUrl = authHandler.generateAuthUrl(state);
     
-    res.json({ authUrl });
+    console.log(`Auth URL generated: ${authUrl.substring(0, 100)}...`);
+    
+    // Return the URL to the client
+    res.json({ url: authUrl });
   } catch (error) {
     console.error('Error generating auth URL:', error);
     res.status(500).json({ error: error.message });
@@ -149,7 +221,9 @@ router.get('/auth-url', async (req, res) => {
 });
 
 router.get('/auth/google', (req, res) => {
-  const authUrl = authHandler.generateAuthUrl();
+  // Generate a random state for security
+  const state = Buffer.from(Date.now().toString()).toString('base64');
+  const authUrl = authHandler.generateAuthUrl(state);
   res.redirect(authUrl);
 });
 
@@ -157,46 +231,41 @@ router.get('/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
     
-    if (!code) {
-      console.error('[CALLBACK] Missing code parameter');
-      throw new Error('Authorization code is missing');
+    if (!code || !state) {
+      return res.status(400).send('Invalid request: Missing code or state');
     }
     
     console.log('[CALLBACK] Received authorization code');
     
-    // Decode state to get chatId
+    // Decode chatId from state
     const chatId = Buffer.from(state, 'base64').toString();
     console.log(`[CALLBACK] Decoded chatId: ${chatId}`);
     
-    // Get tokens
-    const tokens = await authHandler.getTokens(code);
+    // Exchange code for tokens
+    console.log('Exchanging authorization code for tokens');
+    const tokens = await authHandler.getTokensFromCode(code);
+    console.log('Tokens retrieved successfully');
     console.log('[CALLBACK] Retrieved tokens successfully');
     
-    // Setup user's sheet
-    const setupResult = await sheetsIntegration.setupUserSheet(chatId, tokens);
-    console.log(`[CALLBACK] Sheet setup complete: ${setupResult.spreadsheetId}`);
+    // Save tokens
+    await tokenStorage.saveTokens(chatId, { tokens });
+    console.log(`[CALLBACK] Tokens saved for user ${chatId}`);
     
-    // Success message
-    res.send(`
-      <html>
-        <body>
-          <h1>Google Sheets connected successfully!</h1>
-          <p>You can now close this window and return to the Telegram bot.</p>
-          <script>setTimeout(() => window.close(), 5000)</script>
-        </body>
-      </html>
-    `);
+    try {
+      // Set up user's spreadsheet
+      console.log(`Setting up sheet for user: ${chatId}`);
+      await sheetsIntegration.setupUserSheet(chatId);
+      console.log('Sheet setup complete');
+      
+      // Redirect to success page
+      return res.redirect('/auth-success.html');
+    } catch (setupError) {
+      console.error('[CALLBACK] Error during sheet setup:', setupError);
+      return res.status(500).send('Authentication successful, but sheet setup failed. Please try again.');
+    }
   } catch (error) {
     console.error('[CALLBACK] Error:', error);
-    res.status(500).send(`
-      <html>
-        <body>
-          <h1>Connection failed</h1>
-          <p>Error: ${error.message}</p>
-          <p>Please try again in the Telegram bot.</p>
-        </body>
-      </html>
-    `);
+    return res.status(500).send('Authentication failed. Please try again.');
   }
 });
 
