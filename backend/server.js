@@ -56,6 +56,9 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Simple request logger
 app.use((req, res, next) => {
   const start = Date.now();
@@ -79,7 +82,7 @@ if (fs.existsSync(routesDir)) {
         const router = require(`./routes/${routeName}`);
         app.use(routePath, router);
         availableEndpoints.push(routePath);
-        
+        console.log(`✅ Route loaded: ${routePath}`);
       } catch (err) {
         console.error(`Failed to load route ${routePath}:`, err.message);
       }
