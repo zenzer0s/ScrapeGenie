@@ -5,6 +5,9 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+const requestLogCache = {};
+const LOG_DEBOUNCE_MS = 5000;
+
 // Ensure RAM disk directory exists
 const INSTAGRAM_TMP_DIR = "/dev/shm/instagram_tmp";
 
@@ -79,6 +82,46 @@ app.use((req, res, next) => {
         if (duration > 1000) { // Only log responses that take more than 1 second
             console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
         }
+        originalEnd.apply(res, arguments);
+    };
+    
+    next();
+});
+
+// Replace or update your request logging middleware
+app.use((req, res, next) => {
+    // Skip logging for frequently accessed endpoints
+    if (req.path.includes('.') || // Static files
+        req.path === '/healthcheck' ||
+        (req.path.startsWith('/api/google/status') && req.method === 'GET')) {
+        return next();
+    }
+    
+    // Create a cache key based on method, path and query params
+    const cacheKey = `${req.method}_${req.path}_${JSON.stringify(req.query)}`;
+    const now = Date.now();
+    
+    // Don't log if we've seen this exact request recently
+    if (requestLogCache[cacheKey] && (now - requestLogCache[cacheKey] < LOG_DEBOUNCE_MS)) {
+        return next();
+    }
+    
+    // Update cache
+    requestLogCache[cacheKey] = now;
+    
+    // Use a timer to measure response time
+    const start = Date.now();
+    
+    // Override end method to log when the response is sent
+    const originalEnd = res.end;
+    res.end = function() {
+        const duration = Date.now() - start;
+        
+        // Only log if the response takes significant time
+        if (duration > 200) { // Only log responses that take more than 200ms
+            console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+        }
+        
         originalEnd.apply(res, arguments);
     };
     

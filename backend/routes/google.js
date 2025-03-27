@@ -14,6 +14,21 @@ const sheetsManager = require('../../google/sheets/sheetsManager');
 // Create a single instance of SheetsIntegration
 const sheetsIntegration = new SheetsIntegration(tokenStorage, authHandler, sheetsManager);
 
+const routeLogTimestamps = {};
+const LOG_DEBOUNCE_MS = 5000;
+
+function debouncedRouteLog(message, route, chatId) {
+    const logKey = `${route}_${chatId}`;
+    const now = Date.now();
+    
+    if (!routeLogTimestamps[logKey] || (now - routeLogTimestamps[logKey] > LOG_DEBOUNCE_MS)) {
+        console.log(message);
+        routeLogTimestamps[logKey] = now;
+        return true;
+    }
+    return false;
+}
+
 router.get('/sheet-data', async (req, res) => {
     try {
         const { chatId, page = 1, pageSize = 5 } = req.query;
@@ -22,8 +37,8 @@ router.get('/sheet-data', async (req, res) => {
             return res.status(400).json({ error: 'Chat ID required' });
         }
         
-        // Simplified log
-        console.log(`Getting sheet data for chatId: ${chatId}, page: ${page}, pageSize: ${pageSize}`);
+        // Log only if it hasn't been logged recently
+        debouncedRouteLog(`Getting sheet data for chatId: ${chatId}, page: ${page}, pageSize: ${pageSize}`, 'sheet_data', chatId);
         
         // Get sheet data
         const data = await sheetsIntegration.getSheetData(chatId, parseInt(page), parseInt(pageSize));

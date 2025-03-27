@@ -1,6 +1,21 @@
 const { google } = require('googleapis');
 let sheets = null;
+let drive = null;
 let isInitialized = false;
+let lastLogMessages = {};
+const LOG_DEBOUNCE_MS = 5000; // Only log the same message once every 5 seconds
+
+// Create a debounced logging function
+function debouncedLog(message, key = null) {
+    const logKey = key || message;
+    const now = Date.now();
+    
+    // Check if we've logged this recently
+    if (!lastLogMessages[logKey] || (now - lastLogMessages[logKey] > LOG_DEBOUNCE_MS)) {
+        console.log(message);
+        lastLogMessages[logKey] = now;
+    }
+}
 
 /**
  * Initialize the Google Sheets API with an auth client
@@ -11,14 +26,15 @@ function initializeSheets(authClient) {
         throw new Error('Auth client is required');
     }
     
-    if (sheets) {
-        return;
+    if (sheets && isInitialized) {
+        return; // Already initialized, don't log anything
     }
     
     console.log('Initializing Google Sheets API');
     sheets = google.sheets({ version: 'v4', auth: authClient });
     drive = google.drive({ version: 'v3', auth: authClient });
     console.log('Google Sheets API initialized');
+    isInitialized = true;
 }
 
 /**
@@ -76,6 +92,8 @@ async function createSpreadsheet(title) {
     }
 }
 
+let lastSheetNames = {};
+
 /**
  * Get data from a spreadsheet
  * @param {string} spreadsheetId - ID of the spreadsheet
@@ -89,17 +107,31 @@ async function getSpreadsheetData(spreadsheetId, range = null) {
         
         // First, get information about the spreadsheet to find the first sheet name
         if (!range) {
-            const spreadsheet = await sheets.spreadsheets.get({
-                spreadsheetId
-            });
-            
-            if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
-                throw new Error('Spreadsheet has no sheets');
+            // Check if we've already looked up this sheet name recently
+            if (lastSheetNames[spreadsheetId] && 
+                (Date.now() - lastSheetNames[spreadsheetId].timestamp < LOG_DEBOUNCE_MS)) {
+                range = `${lastSheetNames[spreadsheetId].name}!A1:Z1000`;
+            } else {
+                const spreadsheet = await sheets.spreadsheets.get({
+                    spreadsheetId
+                });
+                
+                if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
+                    throw new Error('Spreadsheet has no sheets');
+                }
+                
+                const firstSheetName = spreadsheet.data.sheets[0].properties.title;
+                range = `${firstSheetName}!A1:Z1000`;
+                
+                // Store for future use
+                lastSheetNames[spreadsheetId] = {
+                    name: firstSheetName,
+                    timestamp: Date.now()
+                };
+                
+                // Only log sheet name if it hasn't been logged recently
+                debouncedLog(`Using sheet name: ${firstSheetName}`, `sheet_name_${spreadsheetId}`);
             }
-            
-            const firstSheetName = spreadsheet.data.sheets[0].properties.title;
-            range = `${firstSheetName}!A1:Z1000`;
-            console.log(`Using sheet name: ${firstSheetName}`);
         }
         
         // Now get the data using the determined range
@@ -110,8 +142,9 @@ async function getSpreadsheetData(spreadsheetId, range = null) {
         
         const rows = response.data.values || [];
         
-        if (rows.length > 1) {
-            console.log(`Retrieved ${rows.length - 1} entries`);
+        // Only log if there's data and we haven't logged this recently
+        if (rows.length > 0) {
+            debouncedLog(`Retrieved ${rows.length - 1} entries`, `entries_${spreadsheetId}`);
         }
         
         return rows;
