@@ -1,73 +1,108 @@
-const authHandler = require('../auth/authHandler');
-const sheetsManager = require('../sheets/sheetsManager');
-const tokenStorage = require('../storage/tokenStorage');
+const fs = require('fs');
+const path = require('path');
 
 class SheetsIntegration {
-    async setupUserSheet(userId, tokens) {
-        try {
-            if (!tokens) {
-                throw new Error('No OAuth tokens provided');
-            }
-            
-            console.log('Setting up sheet for user:', userId);
-            
-            // Set credentials
-            const auth = authHandler.setCredentials(tokens);
-            sheetsManager.initializeSheets(auth);
+    constructor(tokenStorage, authHandler, sheetsManager) {
+        this.tokenStorage = tokenStorage;
+        this.authHandler = authHandler;
+        this.sheetsManager = sheetsManager;
+        
+        // Add validation
+        if (!tokenStorage) throw new Error('TokenStorage is required for SheetsIntegration');
+        if (!authHandler) throw new Error('AuthHandler is required for SheetsIntegration');
+        if (!sheetsManager) throw new Error('SheetsManager is required for SheetsIntegration');
+    }
 
-            // Create new spreadsheet
-            const spreadsheetId = await sheetsManager.createNewSpreadsheet(userId);
-            
-            // Store tokens and spreadsheet ID
-            await tokenStorage.saveTokens(userId, {
-                tokens,
-                spreadsheetId,
-                createdAt: new Date().toISOString()
-            });
-            
-            return {
-                spreadsheetId,
-                tokens
-            };
-        } catch (error) {
-            console.error('Setup failed:', error);
-            throw error;
+    async setupUserSheet(chatId) {
+        // Implement lock mechanism to prevent duplicate calls
+        if (this._setupInProgress && this._setupInProgress[chatId]) {
+            console.log(`Setup already in progress for ${chatId}, returning existing promise`);
+            return this._setupInProgress[chatId];
         }
+        
+        // Initialize setup tracking object if needed
+        if (!this._setupInProgress) {
+            this._setupInProgress = {};
+        }
+        
+        // Create and store the promise
+        this._setupInProgress[chatId] = (async () => {
+            try {
+                console.log(`Setting up sheet for user: ${chatId}`);
+                
+                // Get tokens with detailed logging
+                console.log('Getting tokens from storage...');
+                
+                if (!this.tokenStorage) {
+                    console.error('TokenStorage is undefined');
+                    throw new Error('TokenStorage is not initialized');
+                }
+                
+                const userData = await this.tokenStorage.getTokens(chatId);
+                console.log('Got user data:', userData ? 'yes' : 'no');
+                
+                if (!userData || !userData.tokens) {
+                    console.error('No tokens found for user');
+                    throw new Error('No tokens found for user');
+                }
+                
+                // Set up auth
+                this.authHandler.setCredentials(userData.tokens);
+                const authClient = this.authHandler.getAuthClient();
+                
+                // Initialize sheets
+                this.sheetsManager.initializeSheets(authClient);
+                
+                // Create spreadsheet
+                console.log('Creating spreadsheet...');
+                const spreadsheetId = await this.sheetsManager.createSpreadsheet(`ScrapeGenie - ${chatId}`);
+                console.log(`Spreadsheet created with ID: ${spreadsheetId}`);
+                
+                // Update user data
+                console.log('Updating user data with spreadsheet ID...');
+                await this.tokenStorage.saveTokens(chatId, {
+                    ...userData,
+                    spreadsheetId
+                });
+                
+                console.log('Sheet setup complete');
+                return spreadsheetId;
+            } catch (error) {
+                console.error('Setup failed:', error);
+                throw error;
+            } finally {
+                // Clear the lock when done
+                delete this._setupInProgress[chatId];
+            }
+        })();
+        
+        return this._setupInProgress[chatId];
     }
 
     async checkConnection(chatId) {
         try {
             console.log(`Checking connection for chatId: ${chatId}`);
             
-            // Check if we have tokens for this user
-            const userData = await tokenStorage.getTokens(chatId);
+            // Use this.tokenStorage instead of tokenStorage
+            const userData = await this.tokenStorage.getTokens(chatId);
             
-            if (!userData || !userData.tokens) {
-                console.log(`No tokens found for chatId: ${chatId}`);
+            if (!userData || !userData.tokens || !userData.spreadsheetId) {
+                console.log(`No connection data found for chatId: ${chatId}`);
                 return false;
             }
             
-            // Check if we have a spreadsheet ID
-            if (!userData.spreadsheetId) {
-                console.log(`No spreadsheet ID found for chatId: ${chatId}`);
-                return false;
-            }
+            // Set up authentication
+            this.authHandler.setCredentials(userData.tokens);
+            const authClient = this.authHandler.getAuthClient();
             
-            // Try to get a new access token to verify the refresh token works
-            try {
-                // Set credentials and get auth client
-                authHandler.setCredentials(userData.tokens);
-                const authClient = authHandler.getAuthClient();
-                
-                // This will throw if the token is invalid or expired
-                await authClient.getAccessToken();
-                
-                console.log(`Connection verified for chatId: ${chatId}`);
-                return true;
-            } catch (tokenError) {
-                console.error(`Token error for chatId: ${chatId}`, tokenError);
-                return false;
-            }
+            // Test the connection by getting spreadsheet data
+            this.sheetsManager.initializeSheets(authClient);
+            
+            // Try to access the spreadsheet to verify connection
+            await this.sheetsManager.getSpreadsheetData(userData.spreadsheetId);
+            
+            console.log(`Connection successful for chatId: ${chatId}`);
+            return true;
         } catch (error) {
             console.error(`Connection check error for chatId: ${chatId}`, error);
             return false;
@@ -112,9 +147,31 @@ class SheetsIntegration {
         }
     }
 
-    async disconnectUser(userId) {
-        return await tokenStorage.removeTokens(userId);
+    async disconnectUser(chatId) {
+        try {
+            console.log(`Disconnecting user: ${chatId}`);
+            
+            // Remove tokens from storage
+            if (!this.tokenStorage) {
+                console.error('TokenStorage is undefined');
+                throw new Error('TokenStorage is not initialized');
+            }
+            
+            // Delete tokens
+            const success = await this.tokenStorage.removeTokens(chatId);
+            
+            if (success) {
+                console.log(`User ${chatId} disconnected successfully`);
+            } else {
+                console.log(`User ${chatId} was not connected or disconnect failed`);
+            }
+            
+            return success;
+        } catch (error) {
+            console.error(`Error disconnecting user ${chatId}:`, error);
+            return false;
+        }
     }
 }
 
-module.exports = new SheetsIntegration();
+module.exports = SheetsIntegration;
