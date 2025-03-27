@@ -8,6 +8,9 @@ const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCom
 const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
 const { handleYoutubeCallback } = require('./youtubeHandler');
 
+// Add this import
+const { handleSheetCallback } = require('./googleSheetHandler');
+
 // Add these imports for Google commands
 const googleConnectCommand = require('../commands/google/googleConnectCommand');
 const googleStatusCommand = require('../commands/google/googleStatusCommand');
@@ -66,6 +69,89 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     });
     await bot.answerCallbackQuery(callbackQuery.id, { text: 'An error occurred. Please try again.' });
     return;
+  }
+
+  // Handle sheet-related callbacks
+  if (action.startsWith('sheet_')) {
+    try {
+      stepLogger.info('SHEET_CALLBACK_START', { action, chatId });
+      const handled = await handleSheetCallback(bot, callbackQuery);
+      if (handled) {
+        stepLogger.info('CALLBACK_HANDLED', {
+          action,
+          chatId,
+          elapsed: Date.now() - startTime,
+        });
+        return;
+      } else {
+        stepLogger.warn('SHEET_CALLBACK_UNHANDLED', { action, chatId });
+      }
+    } catch (error) {
+      stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { 
+        chatId, 
+        action 
+      });
+      
+      try {
+        await bot.answerCallbackQuery(callbackQuery.id, {
+          text: 'An error occurred. Please try again.',
+          show_alert: true
+        });
+      } catch (err) {
+        // Ignore errors in answering callback queries
+      }
+      return;
+    }
+  }
+
+  // Add this case to your callback handler:
+  if (action === 'google_auth_url') {
+    try {
+      const googleService = require('../services/googleService');
+      
+      stepLogger.info('GOOGLE_AUTH_URL_START', { chatId });
+      
+      // Get auth URL
+      let authUrl;
+      try {
+        authUrl = await googleService.getAuthUrl(chatId);
+        stepLogger.info('GOOGLE_AUTH_URL_RECEIVED', { 
+          chatId, 
+          urlLength: authUrl ? authUrl.length : 0,
+          urlStart: authUrl ? authUrl.substring(0, 30) + '...' : 'undefined'
+        });
+      } catch (urlError) {
+        stepLogger.error(`GOOGLE_AUTH_URL_FETCH_ERROR: ${urlError.message}`, { chatId });
+        throw urlError;
+      }
+      
+      if (!authUrl) {
+        throw new Error('Authentication URL is undefined');
+      }
+      
+      // Send the URL as a regular message
+      await bot.sendMessage(
+        chatId, 
+        `Please click this link to connect Google Sheets:\n\n${authUrl}`
+      );
+      
+      // Answer the callback query
+      await bot.answerCallbackQuery(callbackQuery.id);
+      
+      stepLogger.info('CALLBACK_HANDLED', {
+        action,
+        chatId,
+        elapsed: Date.now() - startTime,
+      });
+      return;
+    } catch (error) {
+      stepLogger.error(`GOOGLE_AUTH_URL_ERROR: ${error.message}`, { chatId });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to generate authentication URL. Please try again.',
+        show_alert: true
+      });
+      return;
+    }
   }
 
   try {
