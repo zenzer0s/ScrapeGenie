@@ -24,10 +24,34 @@ async function handleSheetCallback(bot, query) {
         }
         
         if (action.startsWith('sheet_delete_confirm_')) {
-            const parts = action.split('_');
-            const index = parseInt(parts[3]);
-            const pageNumber = parseInt(parts[4]);
-            return await handleWebsiteDeleteConfirm(bot, query, index, pageNumber);
+            try {
+                const parts = action.split('_');
+                // Make sure we have enough parts
+                if (parts.length < 5) {
+                    throw new Error('Invalid delete confirm action format');
+                }
+                
+                const index = parseInt(parts[3], 10);
+                const pageNumber = parseInt(parts[4], 10);
+                
+                if (isNaN(index) || isNaN(pageNumber)) {
+                    throw new Error('Invalid index or page number');
+                }
+                
+                return await handleWebsiteDeleteConfirm(bot, query, index, pageNumber);
+            } catch (error) {
+                stepLogger.error(`SHEET_DELETE_CONFIRM_ERROR: ${error.message}`, {
+                    chatId, 
+                    action
+                });
+                
+                await bot.answerCallbackQuery(query.id, {
+                    text: '❌ Error: ' + error.message,
+                    show_alert: true
+                });
+                
+                return true; // Mark as handled to prevent "unknown callback" error
+            }
         }
         
         if (action.startsWith('sheet_delete_')) {
