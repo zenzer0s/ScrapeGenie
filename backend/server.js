@@ -59,6 +59,32 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Add this middleware to reduce repetitive HTTP logs
+app.use((req, res, next) => {
+    // Skip logging for static files and frequent API calls
+    if (req.path.startsWith('/api/google/status') || 
+        req.path.includes('.') || // Skip static files (.js, .css, etc)
+        req.path === '/healthcheck') {
+        return next();
+    }
+    
+    // Use a timer to measure response time
+    const start = Date.now();
+    
+    // Override end method to log when the response is sent
+    const originalEnd = res.end;
+    res.end = function() {
+        const duration = Date.now() - start;
+        // Log in a cleaner format with less detail
+        if (duration > 1000) { // Only log responses that take more than 1 second
+            console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+        }
+        originalEnd.apply(res, arguments);
+    };
+    
+    next();
+});
+
 // Simple request logger
 app.use((req, res, next) => {
   const start = Date.now();
