@@ -15,121 +15,66 @@ const sheetsManager = require('../../google/sheets/sheetsManager');
 const sheetsIntegration = new SheetsIntegration(tokenStorage, authHandler, sheetsManager);
 
 router.get('/sheet-data', async (req, res) => {
-  try {
-    const { chatId, page = 1, pageSize = 5 } = req.query;
-    
-    if (!chatId) {
-      return res.status(400).json({ error: 'Chat ID required' });
+    try {
+        const { chatId, page = 1, pageSize = 5 } = req.query;
+        
+        if (!chatId) {
+            return res.status(400).json({ error: 'Chat ID required' });
+        }
+        
+        // Simplified log
+        console.log(`Getting sheet data for chatId: ${chatId}, page: ${page}, pageSize: ${pageSize}`);
+        
+        // Get sheet data
+        const data = await sheetsIntegration.getSheetData(chatId, parseInt(page), parseInt(pageSize));
+        
+        res.json(data);
+    } catch (error) {
+        console.error(`Sheet data error: ${error.message}`);
+        res.status(500).json({ error: error.message });
     }
-    
-    console.log(`Getting sheet data for chatId: ${chatId}, page: ${page}, pageSize: ${pageSize}`);
-    
-    // Check if user is connected
-    const isConnected = await sheetsIntegration.checkConnection(chatId);
-    
-    if (!isConnected) {
-      return res.status(401).json({ error: 'User not connected to Google Sheets' });
-    }
-    
-    console.log('User is connected to Google Sheets');
-    
-    // Get user data and authenticate
-    const userData = await tokenStorage.getTokens(chatId);
-    
-    if (!userData || !userData.tokens) {
-      console.error('No tokens found for user', chatId);
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    
-    if (!userData.spreadsheetId) {
-      console.error('No spreadsheet ID found for user', chatId);
-      return res.status(404).json({ error: 'Spreadsheet not found' });
-    }
-    
-    console.log(`Using spreadsheet ID: ${userData.spreadsheetId}`);
-    
-    // Set up authentication
-    authHandler.setCredentials(userData.tokens);
-    const authClient = authHandler.getAuthClient();
-    
-    // Add a small delay before initializing to prevent race conditions
-    // when multiple requests come in at once
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
-    // Initialize sheets with auth client
-    sheetsManager.initializeSheets(authClient);
-    
-    // Get spreadsheet data
-    const sheetData = await sheetsManager.getSpreadsheetData(userData.spreadsheetId);
-    
-    // Format the data as entries
-    const entries = sheetData.map(row => ({
-      title: row[0] || 'Untitled',
-      url: row[1] || 'No URL',
-      description: row[2] || 'No description',
-      dateAdded: row[3] || new Date().toISOString()
-    }));
-    
-    // Handle pagination
-    const totalEntries = entries.length;
-    const totalPages = Math.ceil(totalEntries / pageSize) || 1;
-    const currentPage = Math.min(parseInt(page), totalPages);
-    const startIndex = (currentPage - 1) * pageSize;
-    const paginatedEntries = entries.slice(startIndex, startIndex + parseInt(pageSize));
-    
-    console.log(`Retrieved ${totalEntries} entries, returning page ${currentPage} with ${paginatedEntries.length} items`);
-    
-    res.json({
-      entries: paginatedEntries,
-      totalEntries,
-      totalPages,
-      currentPage
-    });
-  } catch (error) {
-    console.error('Error getting sheet data:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 router.delete('/sheet-entry', async (req, res) => {
-  try {
-    const { chatId, url } = req.body;
-    
-    if (!chatId || !url) {
-      return res.status(400).json({ error: 'Missing required fields: chatId and url' });
+    try {
+        const { chatId, url } = req.body;
+        
+        if (!chatId || !url) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+        
+        // Simplified log
+        console.log(`Deleting sheet entry for chatId: ${chatId}, URL: ${url}`);
+        
+        // Check if user is connected
+        const isConnected = await sheetsIntegration.checkConnection(chatId);
+        
+        if (!isConnected) {
+            return res.status(400).json({ error: 'User not connected to Google Sheets' });
+        }
+        
+        // Get user data with spreadsheet ID
+        const userData = await tokenStorage.getTokens(chatId);
+        
+        if (!userData || !userData.spreadsheetId) {
+            return res.status(400).json({ error: 'No spreadsheet found for user' });
+        }
+        
+        // Set up auth client with user's tokens
+        authHandler.setCredentials(userData.tokens);
+        const authClient = authHandler.getAuthClient();
+        
+        // Initialize sheets API with auth client
+        sheetsManager.initializeSheets(authClient);
+        
+        // Delete entry by URL
+        await sheetsManager.deleteEntryByUrl(userData.spreadsheetId, url);
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`Error deleting sheet entry: ${error.message}`);
+        res.status(500).json({ error: error.message });
     }
-    
-    console.log(`Deleting sheet entry for chatId: ${chatId}, URL: ${url}`);
-    
-    // Check if user is connected
-    const isConnected = await sheetsIntegration.checkConnection(chatId);
-    
-    if (!isConnected) {
-      return res.status(400).json({ error: 'User is not connected to Google Sheets' });
-    }
-    
-    // Get user data with spreadsheet ID
-    const userData = await tokenStorage.getTokens(chatId);
-    
-    if (!userData || !userData.spreadsheetId) {
-      return res.status(400).json({ error: 'No spreadsheet found for user' });
-    }
-    
-    // Set up auth client with user's tokens
-    authHandler.setCredentials(userData.tokens);
-    const authClient = authHandler.getAuthClient();
-    
-    // Initialize sheets API with auth client
-    sheetsManager.initializeSheets(authClient);
-    
-    // Delete entry by URL
-    await sheetsManager.deleteEntryByUrl(userData.spreadsheetId, url);
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error(`Error deleting sheet entry: ${error}`);
-    res.status(500).json({ error: error.message });
-  }
 });
 
 router.post('/store-metadata', async (req, res) => {
