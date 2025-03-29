@@ -2,6 +2,13 @@ const express = require("express");
 const { scrapeContent } = require("../scraper/scraperManager");
 const { fetchInstagramPost } = require("../scraper/instaScraper");
 const { scrapePinterest, loginToPinterest } = require('../scraper/pinterestScraper');
+const SheetsIntegration = require('../../google/integration/sheetsIntegration');
+const tokenStorage = require('../../google/storage/tokenStorage');
+const authHandler = require('../../google/auth/authHandler');
+const sheetsManager = require('../../google/sheets/sheetsManager');
+
+// Create an instance of SheetsIntegration
+const sheetsIntegration = new SheetsIntegration(tokenStorage, authHandler, sheetsManager);
 
 // Define URL patterns for different services
 const pinterestPattern = /(?:https?:\/\/)?(?:www\.)?(?:pinterest\.com|pin\.it)\/([^\/\s]+)/i;
@@ -53,6 +60,32 @@ router.post("/", async (req, res) => {
         }
         
         console.log(`✅ Scraper Result:`, result);
+        
+        // After scraping is complete and result is available:
+        if (result && result.type === 'website') {
+            const chatId = req.body.chatId || req.body.userId;
+            if (chatId) {
+                try {
+                    // Check if user is connected to Google Sheets
+                    const status = await sheetsIntegration.checkConnection(chatId);
+                    
+                    if (status.connected && status.authentication && !status.spreadsheetMissing) {
+                        // Store scraped data in Google Sheets
+                        await sheetsIntegration.storeWebsiteMetadata(chatId, {
+                            title: result.title,
+                            url: result.originalUrl || url,
+                            description: result.content
+                        });
+                        
+                        // Add flag so client knows data was stored
+                        result.sheetUpdated = true;
+                    }
+                } catch (sheetError) {
+                    console.error(`Failed to store data in Google Sheets: ${sheetError.message}`);
+                    // Don't fail the whole request if Google storage fails
+                }
+            }
+        }
         
         if (!result || result.error) {
             return res.status(500).json({ success: false, error: "Scraping failed", details: result });
