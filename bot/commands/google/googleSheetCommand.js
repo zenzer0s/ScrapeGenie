@@ -7,10 +7,10 @@ async function googleSheetCommand(bot, msg) {
     stepLogger.info('CMD_GOOGLE_SHEET', { chatId });
 
     try {
-        // Check if user is connected to Google
-        const isConnected = await googleService.checkConnectionStatus(chatId);
+        // Check detailed connection status instead of just boolean
+        const status = await googleService.getDetailedStatus(chatId);
 
-        if (!isConnected) {
+        if (!status.connected) {
             const authUrl = await googleService.getAuthUrl(chatId);
             const connectButton = {
                 inline_keyboard: [[
@@ -22,6 +22,23 @@ async function googleSheetCommand(bot, msg) {
                 chatId,
                 '❌ You need to connect Google Sheets first to view your saved data.',
                 { reply_markup: connectButton }
+            );
+            return { sentMessage, userMessageId: msg.message_id };
+        }
+        
+        // Handle case where user is authenticated but spreadsheet is missing
+        if (status.spreadsheetMissing) {
+            const createButton = {
+                inline_keyboard: [[
+                    { text: '📊 Create New Spreadsheet', callback_data: 'google_create_sheet' }
+                ]]
+            };
+
+            const sentMessage = await bot.sendMessage(
+                chatId,
+                '⚠️ Your Google account is connected, but your spreadsheet is missing or was deleted.\n\n' +
+                'Click the button below to create a new spreadsheet:',
+                { reply_markup: createButton }
             );
             return { sentMessage, userMessageId: msg.message_id };
         }
