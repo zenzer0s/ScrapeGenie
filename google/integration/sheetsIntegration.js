@@ -79,26 +79,77 @@ class SheetsIntegration {
         return this._setupInProgress[chatId];
     }
 
+    // Update the checkConnection method to detect deleted spreadsheets
     async checkConnection(chatId) {
         try {
             const userData = await this.tokenStorage.getTokens(chatId);
             
-            if (!userData || !userData.tokens || !userData.spreadsheetId) {
-                return false;
+            if (!userData || !userData.tokens) {
+                return {
+                    connected: false,
+                    authentication: false,
+                    message: "Not authenticated with Google"
+                };
             }
             
-            this.authHandler.setCredentials(userData.tokens);
-            const authClient = this.authHandler.getAuthClient();
-            this.sheetsManager.initializeSheets(authClient);
+            // Check if spreadsheetId exists
+            if (!userData.spreadsheetId) {
+                return {
+                    connected: true,
+                    authentication: true,
+                    spreadsheetMissing: true,
+                    message: "Authentication successful, but no spreadsheet is linked"
+                };
+            }
             
             // Try to access the spreadsheet to verify connection
-            await this.sheetsManager.getSpreadsheetData(userData.spreadsheetId);
-            
-            console.log(`Connection successful for chatId: ${chatId}`);
-            return true;
+            try {
+                this.authHandler.setCredentials(userData.tokens);
+                const authClient = this.authHandler.getAuthClient();
+                this.sheetsManager.initializeSheets(authClient);
+                
+                await this.sheetsManager.getSpreadsheetData(userData.spreadsheetId);
+                
+                return {
+                    connected: true,
+                    authentication: true,
+                    message: "Connected to Google Sheets"
+                };
+            } catch (error) {
+                // Check if spreadsheet was deleted
+                if (error.message.includes("Requested entity was not found") || 
+                    error.message.includes("not found") || 
+                    error.message.includes("File not found")) {
+                    
+                    console.log(`Spreadsheet was deleted for chatId: ${chatId}`);
+                    
+                    // Clear the spreadsheet ID but keep auth tokens
+                    userData.spreadsheetId = null;
+                    await this.tokenStorage.saveTokens(chatId, userData);
+                    
+                    return {
+                        connected: true,
+                        authentication: true,
+                        spreadsheetMissing: true,
+                        message: "Your spreadsheet was deleted. Please create a new one."
+                    };
+                }
+                
+                console.error(`Connection check error: ${error.message}`);
+                return {
+                    connected: false,
+                    authentication: true,
+                    error: error.message,
+                    message: "Error connecting to Google Sheets"
+                };
+            }
         } catch (error) {
             console.error(`Connection check error: ${error.message}`);
-            return false;
+            return {
+                connected: false,
+                error: error.message,
+                message: "Error checking connection"
+            };
         }
     }
 
@@ -108,7 +159,7 @@ class SheetsIntegration {
             
             const isConnected = await this.checkConnection(chatId);
             
-            if (!isConnected) {
+            if (!isConnected.connected) {
                 throw new Error('User is not connected to Google Sheets');
             }
             
@@ -163,7 +214,8 @@ class SheetsIntegration {
         try {
             console.log(`[SHEETS] Storing metadata for user ${chatId}:`, metadata);
             
-            const userData = await tokenStorage.getTokens(chatId);
+            // Use this.tokenStorage instead of tokenStorage
+            const userData = await this.tokenStorage.getTokens(chatId);
             
             if (!userData) {
                 console.error(`[SHEETS] No tokens found for user ${chatId}`);
@@ -175,19 +227,19 @@ class SheetsIntegration {
                 tokensExist: !!userData.tokens
             });
             
-            // Get auth client with tokens
-            authHandler.setCredentials(userData.tokens);
-            const authClient = authHandler.getAuthClient();
+            // Use this.authHandler instead of authHandler
+            this.authHandler.setCredentials(userData.tokens);
+            const authClient = this.authHandler.getAuthClient();
             
             console.log(`[SHEETS] Auth client created for ${chatId}`);
             
-            // Initialize sheets with auth client
-            sheetsManager.initializeSheets(authClient);
+            // Use this.sheetsManager instead of sheetsManager
+            this.sheetsManager.initializeSheets(authClient);
             
             console.log(`[SHEETS] Sheets initialized, appending data to ${userData.spreadsheetId}`);
             
-            // Store the metadata
-            await sheetsManager.appendWebsiteData(userData.spreadsheetId, metadata);
+            // Use this.sheetsManager instead of sheetsManager
+            await this.sheetsManager.appendWebsiteData(userData.spreadsheetId, metadata);
             
             console.log(`[SHEETS] Metadata stored successfully for ${chatId}`);
             return true;
@@ -220,6 +272,51 @@ class SheetsIntegration {
         } catch (error) {
             console.error(`Error disconnecting user ${chatId}:`, error);
             return false;
+        }
+    }
+
+    // Add method to create a new spreadsheet for an authenticated user
+    async createNewSpreadsheet(chatId) {
+        try {
+            console.log(`Creating new spreadsheet for user: ${chatId}`);
+            
+            // Get tokens with detailed logging
+            const userData = await this.tokenStorage.getTokens(chatId);
+            
+            if (!userData || !userData.tokens) {
+                console.error('No tokens found for user');
+                throw new Error('No tokens found for user');
+            }
+            
+            // Set up auth
+            this.authHandler.setCredentials(userData.tokens);
+            const authClient = this.authHandler.getAuthClient();
+            
+            // Initialize sheets
+            this.sheetsManager.initializeSheets(authClient);
+            
+            // Create spreadsheet
+            console.log('Creating spreadsheet...');
+            const spreadsheetId = await this.sheetsManager.createSpreadsheet(`ScrapeGenie - ${chatId}`);
+            console.log(`Spreadsheet created with ID: ${spreadsheetId}`);
+            
+            // Update user data
+            userData.spreadsheetId = spreadsheetId;
+            await this.tokenStorage.saveTokens(chatId, userData);
+            
+            console.log('New spreadsheet created successfully');
+            return {
+                success: true,
+                spreadsheetId,
+                message: "New spreadsheet created successfully"
+            };
+        } catch (error) {
+            console.error('Spreadsheet creation failed:', error);
+            return {
+                success: false,
+                error: error.message,
+                message: "Failed to create spreadsheet"
+            };
         }
     }
 }
