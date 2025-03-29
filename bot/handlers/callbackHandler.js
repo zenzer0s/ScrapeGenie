@@ -16,6 +16,9 @@ const googleConnectCommand = require('../commands/google/googleConnectCommand');
 const googleStatusCommand = require('../commands/google/googleStatusCommand');
 const googleSheetCommand = require('../commands/google/googleSheetCommand');
 
+// Import the handlers
+const { handleCreateSheetCallback, handleDisconnectCallback } = require('../commands/google/index');
+
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
 const stepLogger = require('../utils/stepLogger');
@@ -154,6 +157,26 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     }
   }
 
+  // Handle Google-specific callbacks
+  if (action === 'google_create_sheet') {
+    try {
+      stepLogger.info('GOOGLE_CREATE_SHEET_START', { chatId });
+      await handleCreateSheetCallback(bot, callbackQuery);
+      stepLogger.info('GOOGLE_CREATE_SHEET_SUCCESS', { chatId });
+      return;
+    } catch (error) {
+      stepLogger.error('GOOGLE_CREATE_SHEET_ERROR', { chatId, error: error.message });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to create spreadsheet. Please try again.',
+        show_alert: true
+      });
+      return;
+    }
+  } else if (action === 'google_disconnect_confirm' || action === 'google_disconnect_cancel') {
+    await handleDisconnectCallback(bot, callbackQuery);
+    return;
+  }
+
   try {
     // First, check if it's a help-settings related action
     if (action === 'toggle_settings' || action === 'toggle_media' || action === 'back_to_help') {
@@ -182,6 +205,26 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
       'google_connect': () => googleConnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'google_status': () => googleStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'google_sheet': () => googleSheetCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      
+      'google_disconnect_confirm': async () => {
+        try {
+          await handleDisconnectCallback(bot, callbackQuery);
+          return {}; // No message to delete
+        } catch (error) {
+          stepLogger.error('GOOGLE_DISCONNECT_CONFIRM_ERROR', { chatId, error: error.message });
+          throw error;
+        }
+      },
+      
+      'google_disconnect_cancel': async () => {
+        try {
+          await handleDisconnectCallback(bot, callbackQuery);
+          return {}; // No message to delete
+        } catch (error) {
+          stepLogger.error('GOOGLE_DISCONNECT_CANCEL_ERROR', { chatId, error: error.message });
+          throw error;
+        }
+      },
       
       'open_settings': async () => {
         try {
