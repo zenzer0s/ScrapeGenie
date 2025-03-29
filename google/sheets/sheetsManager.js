@@ -255,10 +255,50 @@ async function deleteEntryByUrl(spreadsheetId, url) {
     }
 }
 
+/**
+ * Append website data to a spreadsheet
+ * @param {string} spreadsheetId - ID of the spreadsheet
+ * @param {Object} metadata - Website metadata to append
+ * @returns {Promise<Object>} - Sheets API response
+ */
+async function appendWebsiteData(spreadsheetId, metadata) {
+  try {
+    console.log(`Appending website data to spreadsheet ${spreadsheetId}`);
+    
+    if (!sheets) {
+      throw new Error('Google Sheets API not initialized');
+    }
+    
+    // Format the data as a row
+    const now = new Date().toISOString();
+    const rowData = [
+      metadata.title || 'Untitled',                  // Title
+      metadata.originalUrl || metadata.url || '',    // URL
+      metadata.content || metadata.description || '', // Description
+      now                                            // Date Added
+    ];
+    
+    // Get the first sheet name
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId
+    });
+    
+    const sheetName = response.data.sheets[0].properties.title;
+    console.log(`Using sheet "${sheetName}" for appending data`);
+    
+    // Append the row
+    return await appendRow(spreadsheetId, rowData, `${sheetName}!A:D`);
+  } catch (error) {
+    console.error('Error appending website data:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   initializeSheets,
   createSpreadsheet,
   getSpreadsheetData,
   appendRow,
-  deleteEntryByUrl
+  deleteEntryByUrl,
+  appendWebsiteData  // Add this
 };
