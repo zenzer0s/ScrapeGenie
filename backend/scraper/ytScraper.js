@@ -25,8 +25,16 @@ function extractVideoId(url) {
 
 // Get thumbnail URL directly from video ID (no browser needed)
 function getThumbnailUrl(videoId) {
-  // Try the highest quality first
-  return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+  // Return standard thumbnail that's guaranteed to exist
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  
+  // Alternative: return multiple options for the client to try
+  // return {
+  //   maxres: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+  //   high: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+  //   medium: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+  //   default: `https://i.ytimg.com/vi/${videoId}/default.jpg`
+  // };
 }
 
 async function ytScraper(videoUrl) {
@@ -180,7 +188,7 @@ async function scrapeYouTube(url, retries = 2) {
       success: true,
       type: 'youtube',
       title: 'YouTube Video',
-      mediaUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '',
+      mediaUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '',
       originalUrl: url,
       videoId: videoId || null,
       hasAudio: false
