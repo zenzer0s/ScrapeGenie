@@ -129,17 +129,8 @@ router.post('/store-metadata', async (req, res) => {
     // Initialize sheets with auth client
     sheetsManager.initializeSheets(authClient);
     
-    // Store the metadata - this was the line with the error
-    // Make sure we're calling the function correctly
-    await sheetsManager.appendRow(
-      userData.spreadsheetId, 
-      [
-        metadata.title || 'Untitled',
-        metadata.url,
-        metadata.description || 'No description',
-        new Date().toISOString() // Add timestamp
-      ]
-    );
+    // Store the metadata
+    await sheetsManager.appendWebsiteData(userData.spreadsheetId, metadata);
     
     res.json({ success: true });
   } catch (error) {
@@ -225,20 +216,27 @@ router.get('/callback', async (req, res) => {
 
 router.get('/status', async (req, res) => {
   try {
+    console.log('Status endpoint called with params:', req.query);
     const { chatId } = req.query;
+    
     if (!chatId) {
       return res.status(400).json({ error: 'Chat ID required' });
     }
     
-    // Check if user has connected Google Sheets
-    // In production, you would check a database
-    // For now, we'll return a mock response
-    const isConnected = await sheetsIntegration.checkConnection(chatId);
+    console.log(`Checking connection for chatId: ${chatId}`);
     
-    res.json({ isConnected });
+    // Get detailed connection status
+    const status = await sheetsIntegration.checkConnection(chatId);
+    console.log(`Connection status for ${chatId}:`, status);
+    
+    res.json(status);
   } catch (error) {
     console.error('Error checking status:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ 
+      connected: false,
+      error: error.message,
+      message: "Error checking connection status"
+    });
   }
 });
 
@@ -302,6 +300,31 @@ router.post('/scrape-and-store', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message 
+    });
+  }
+});
+
+router.post('/create-spreadsheet', async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    
+    if (!chatId) {
+      return res.status(400).json({ error: 'Chat ID required' });
+    }
+    
+    console.log(`Creating new spreadsheet for chatId: ${chatId}`);
+    
+    // Create a new spreadsheet using our method
+    const result = await sheetsIntegration.createNewSpreadsheet(chatId);
+    
+    // Return the result
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating spreadsheet:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: "Failed to create spreadsheet"
     });
   }
 });
