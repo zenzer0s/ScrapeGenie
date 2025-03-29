@@ -200,6 +200,50 @@ class GoogleService {
             throw new Error('Failed to store website metadata');
         }
     }
+
+    /**
+     * Get detailed connection status
+     * @param {string} chatId - The Telegram chat ID
+     * @returns {Promise<Object>} - Detailed connection status
+     */
+    async getDetailedStatus(chatId) {
+        try {
+            stepLogger.info('GOOGLE_STATUS_CHECK', { chatId });
+            
+            // Use this.api which is already configured with the baseURL
+            const response = await this.api.get(`/api/google/status?chatId=${chatId}`);
+            
+            stepLogger.debug('GOOGLE_STATUS_RESPONSE', { chatId, response: JSON.stringify(response.data).substring(0, 100) + '...' });
+            return response.data;
+        } catch (error) {
+            stepLogger.error('GOOGLE_STATUS_CHECK_ERROR', { chatId, error: error.message });
+            throw error;
+        }
+    }
+
+    /**
+     * Create a new spreadsheet for an authenticated user
+     * @param {string} chatId - The Telegram chat ID
+     * @returns {Promise<Object>} - Result with success status
+     */
+    async createNewSpreadsheet(chatId) {
+        try {
+            stepLogger.info('GOOGLE_CREATE_SPREADSHEET', { chatId });
+            
+            // Use this.api instead of axios directly
+            const response = await this.api.post(`/api/google/create-spreadsheet`, { chatId });
+            
+            stepLogger.debug('GOOGLE_CREATE_SPREADSHEET_RESPONSE', { chatId, response: JSON.stringify(response.data) });
+            return response.data;
+        } catch (error) {
+            stepLogger.error('GOOGLE_CREATE_SPREADSHEET_ERROR', { chatId, error: error.message });
+            return { 
+                success: false, 
+                error: error.message,
+                message: "Failed to create spreadsheet"
+            };
+        }
+    }
 }
 
 module.exports = new GoogleService();
