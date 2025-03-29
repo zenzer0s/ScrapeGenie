@@ -53,6 +53,67 @@ async function handleDisconnectCallback(bot, query) {
     }
 }
 
+// Add new handler for create sheet functionality
+async function handleCreateSheetCallback(bot, query) {
+    const chatId = query.message.chat.id;
+    
+    try {
+        // Show "processing" feedback
+        await bot.answerCallbackQuery(query.id, {
+            text: 'Creating new spreadsheet...',
+            show_alert: false
+        });
+        
+        // Update message to show "in progress"
+        await bot.editMessageText(
+            '🔄 Creating your new Google spreadsheet...',
+            {
+                chat_id: chatId,
+                message_id: query.message.message_id
+            }
+        );
+        
+        // Create new spreadsheet
+        const googleService = require('../../services/googleService');
+        const result = await googleService.createNewSpreadsheet(chatId);
+        
+        if (result.success) {
+            // Success message
+            await bot.editMessageText(
+                '✅ New Google spreadsheet created successfully!\n\n' +
+                'You can now use /scrape to add content to your spreadsheet.',
+                {
+                    chat_id: chatId,
+                    message_id: query.message.message_id
+                }
+            );
+        } else {
+            // Error message
+            await bot.editMessageText(
+                `❌ Failed to create spreadsheet: ${result.message}`,
+                {
+                    chat_id: chatId,
+                    message_id: query.message.message_id
+                }
+            );
+        }
+    } catch (error) {
+        console.error('Create spreadsheet error:', error);
+        await bot.answerCallbackQuery(query.id, {
+            text: '❌ Failed to create spreadsheet',
+            show_alert: true
+        });
+        
+        await bot.editMessageText(
+            '❌ Failed to create spreadsheet. Please try again later.',
+            {
+                chat_id: chatId,
+                message_id: query.message.message_id
+            }
+        );
+    }
+}
+
 // Map of commands to their handlers
 const googleCommands = {
     'google_connect': googleConnectCommand,
@@ -63,7 +124,8 @@ const googleCommands = {
 // Callback query handlers
 const googleCallbacks = {
     'google_disconnect_confirm': handleDisconnectCallback,
-    'google_disconnect_cancel': handleDisconnectCallback
+    'google_disconnect_cancel': handleDisconnectCallback,
+    'google_create_sheet': handleCreateSheetCallback  // Add the new callback handler
 };
 
 // Register Google commands with bot
@@ -71,14 +133,6 @@ function registerGoogleCommands(bot) {
     // Register command handlers
     Object.entries(googleCommands).forEach(([command, handler]) => {
         bot.onText(new RegExp(`/${command}`), (msg) => handler(bot, msg));
-    });
-
-    // Register callback query handlers
-    bot.on('callback_query', (query) => {
-        const handler = googleCallbacks[query.data];
-        if (handler) {
-            handler(bot, query);
-        }
     });
 
     // Add command descriptions
@@ -99,5 +153,6 @@ module.exports = {
     googleStatusCommand,
     googleDisconnectCommand,
     googleSheetCommand,
-    handleDisconnectCallback  // Also export this function
+    handleDisconnectCallback,
+    handleCreateSheetCallback  // Export the new handler
 };
