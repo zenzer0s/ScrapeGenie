@@ -104,7 +104,7 @@ if (fs.existsSync(routesDir)) {
         const router = require(`./routes/${routeName}`);
         app.use(routePath, router);
         availableEndpoints.push(routePath);
-        console.log(`✅ Route loaded: ${routePath}`);
+       // console.log(`✅ Route loaded: ${routePath}`);
       } catch (err) {
         console.error(`Failed to load route ${routePath}:`, err.message);
       }
