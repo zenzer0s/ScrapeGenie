@@ -3,7 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const lockFile = path.join(__dirname, '../.bot.lock');
-const statusNotifier = require('./services/statusNotifier');
+const { deleteMessageAfterDelay } = require('./utils/messageUtils');
+const commandHandler = require('./messageHandler'); // Added import for commandHandler
 
 // Check if another instance is running
 function checkForMultipleInstances() {
@@ -34,13 +35,11 @@ function checkForMultipleInstances() {
       }
     });
     
-    // Also handle SIGINT and SIGTERM with notifications
+    // Also handle SIGINT and SIGTERM
     process.on('SIGINT', async () => {
       logger.warn("Received SIGINT signal");
       try {
-        await statusNotifier.notifyOffline(bot, 'Manual shutdown (Ctrl+C)');
-        
-        // Give time for notification to send
+        // Give time for cleanup
         setTimeout(() => {
           try {
             fs.unlinkSync(lockFile);
@@ -58,9 +57,7 @@ function checkForMultipleInstances() {
     process.on('SIGTERM', async () => {
       logger.warn("Received SIGTERM signal");
       try {
-        await statusNotifier.notifyOffline(bot, 'Scheduled shutdown');
-        
-        // Give time for notification to send
+        // Give time for cleanup
         setTimeout(() => {
           try {
             fs.unlinkSync(lockFile);
@@ -114,16 +111,10 @@ const logger = require('./utils/consoleLogger');
 const stepLogger = require('./utils/stepLogger');
 
 // Import commands and handlers
-const { 
-  startCommand,
-  helpCommand, 
-  statusCommand,
-  pinterestLoginCommand,
-  pinterestLogoutCommand,
-  pinterestStatusCommand
-} = require('./commands');
+const commands = require('./commands'); // Updated to use single import for commands
 const { handleMessage } = require('./messageHandler');
-const { handleCallbackQuery, deleteMessageAfterDelay } = require('./handlers/callbackHandler');
+const { handleCallbackQuery } = require('./handlers/callbackHandler');
+// deleteMessageAfterDelay is already imported above
 const { checkBackendStatus } = require('./utils/statusUtils');
 const { setupMaintenanceTasks } = require('./services/maintenanceService');
 const queueService = require('./services/queueService');
@@ -135,49 +126,45 @@ axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 const bot = new TelegramBot(config.token, { polling: true });
 logger.info("🔍 Bot is running in polling mode...");
 
+// Override sendMessage to automatically delete all messages
+const originalSendMessage = bot.sendMessage.bind(bot);
+bot.sendMessage = async (chatId, text, options = {}) => {
+  try {
+    const sentMsg = await originalSendMessage(chatId, text, options);
+    // Auto-delete all bot messages after 15 seconds
+    deleteMessageAfterDelay(bot, chatId, sentMsg.message_id, 15000);
+    return sentMsg;
+  } catch (error) {
+    console.error('Error in sendMessage override:', error);
+    throw error;
+  }
+};
+
 // Register command handlers
 bot.onText(/\/start/, async (msg) => {
-  const { sentMessage, userMessageId } = await startCommand(bot, msg);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
-  deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
-});
-
-bot.onText(/\/help/, async (msg) => {
-  const { sentMessage, userMessageId } = await helpCommand(bot, msg);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
-  deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
-});
-
-bot.onText(/\/status/, async (msg) => {
-  const { sentMessage, userMessageId } = await statusCommand(bot, msg, checkBackendStatus);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  const { sentMessage, userMessageId } = await commands.startCommand(bot, msg);
+  // Only delete user message - bot messages are auto-deleted by override
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
 
 bot.onText(/\/usage/, async (msg) => {
   const { sentMessage, userMessageId } = await commands.usageCommand(bot, msg);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
 
 // Register Pinterest command handlers
 bot.onText(/\/pinterest_login/, async (msg) => {
-  const { sentMessages, userMessageId } = await pinterestLoginCommand(bot, msg);
-  sentMessages.forEach(sentMessage => {
-    deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
-  });
+  const { sentMessages, userMessageId } = await commands.pinterestLoginCommand(bot, msg);
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
 
 bot.onText(/\/pinterest_logout/, async (msg) => {
-  const { sentMessage, userMessageId } = await pinterestLogoutCommand(bot, msg);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  const { sentMessage, userMessageId } = await commands.pinterestLogoutCommand(bot, msg);
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
 
 bot.onText(/\/pinterest_status/, async (msg) => {
-  const { sentMessage, userMessageId } = await pinterestStatusCommand(bot, msg);
-  deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
+  const { sentMessage, userMessageId } = await commands.pinterestStatusCommand(bot, msg);
   deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
 });
 
@@ -229,41 +216,37 @@ bot.onText(/\/collect/, async (msg) => {
   }
 });
 
-// Admin commands for status notifications
-bot.onText(/\/addadmin/, async (msg) => {
-  try {
-    const { sentMessage, userMessageId } = await commands.addAdminCommand(bot, msg);
-    deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
-    deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
-  } catch (error) {
-    logger.error(`Error in addadmin command: ${error.message}`);
-  }
-});
-
-bot.onText(/\/removeadmin/, async (msg) => {
-  try {
-    const { sentMessage, userMessageId } = await commands.removeAdminCommand(bot, msg);
-    deleteMessageAfterDelay(bot, msg.chat.id, sentMessage.message_id, 15000);
-    deleteMessageAfterDelay(bot, msg.chat.id, userMessageId, 15000);
-  } catch (error) {
-    logger.error(`Error in removeadmin command: ${error.message}`);
-  }
-});
-
-
-
 // Delegate message processing to messageHandler.js
 bot.on('message', async (msg) => {
   try {
-    await handleMessage(bot, msg); 
+    if (!msg.text) return;
+    
+    const chatId = msg.chat.id;
+    console.log(`📩 Message from ${chatId}: ${msg.text}`);
+    
+    // Process commands through the central handler
+    const isHandled = await commandHandler.handleMessage(bot, msg); // Updated to use commandHandler
+    
+    // Delete user messages after processing (optional)
+    // You can uncomment this if you want to delete user messages too
+    // deleteMessageAfterDelay(bot, chatId, msg.message_id, 15000);
+    
   } catch (error) {
-    logger.error(`Error handling message: ${error.message}`);
+    console.error('Error handling message:', error);
   }
 });
 
 // Setup callback query handler
 bot.on('callback_query', async (callbackQuery) => {
   await handleCallbackQuery(bot, callbackQuery, checkBackendStatus);
+});
+
+// Register help command handler
+bot.onText(/\/help/, async (msg) => {
+  // Make sure this actually calls your help command function:
+  await commands.helpCommand(bot, msg); 
+  // Or it might be directly importing the function:
+  // await helpCommand(bot, msg);
 });
 
 // Global error handlers to prevent the process from crashing
@@ -279,14 +262,5 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Setup maintenance tasks
 setupMaintenanceTasks();
-
-// Send online notification after bot is fully initialized
-(async () => {
-  try {
-    await statusNotifier.notifyOnline(bot);
-  } catch (error) {
-    logger.error(`Error sending online notification: ${error.message}`);
-  }
-})();
 
 logger.success("Bot initialization complete");
