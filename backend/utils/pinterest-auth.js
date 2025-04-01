@@ -203,11 +203,7 @@ async function captureAuthSession(email, password, outputPath = 'data/session.js
     fs.writeFileSync(outputPath, JSON.stringify(sessionData, null, 2));
     log(`Session data saved successfully!`, 'success');
     
-    // Return the session data directly in addition to writing the file
-    return {
-      success: true,
-      ...sessionData
-    };
+    return true;
   } catch (error) {
     log(`Error during authentication process: ${error.message}`, 'error');
     await browser.close();
