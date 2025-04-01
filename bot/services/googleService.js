@@ -244,6 +244,26 @@ class GoogleService {
             };
         }
     }
+
+    /**
+     * Get basic connection status
+     * @param {string} chatId - The Telegram chat ID
+     * @returns {Promise<boolean>} - True if connected and authenticated, false otherwise
+     */
+    async getStatus(chatId) {
+        try {
+            stepLogger.info('GOOGLE_BASIC_STATUS_CHECK', { chatId });
+            
+            // Use the detailed status function and return just the boolean
+            const detailedStatus = await this.getDetailedStatus(chatId);
+            
+            // Return true if connected AND authenticated, false otherwise
+            return !!(detailedStatus && detailedStatus.connected && detailedStatus.authentication);
+        } catch (error) {
+            stepLogger.error('GOOGLE_BASIC_STATUS_ERROR', { chatId, error: error.message });
+            return false;
+        }
+    }
 }
 
 module.exports = new GoogleService();
