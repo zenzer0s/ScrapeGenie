@@ -294,11 +294,41 @@ async function appendWebsiteData(spreadsheetId, metadata) {
   }
 }
 
+/**
+ * Delete a spreadsheet permanently from Google Drive
+ * @param {string} spreadsheetId - ID of the spreadsheet to delete
+ * @returns {Promise<boolean>} - Success status
+ */
+async function deleteSpreadsheet(spreadsheetId) {
+  try {
+    console.log(`Deleting spreadsheet ${spreadsheetId} from Google Drive`);
+    
+    if (!drive) {
+      // Initialize Drive API if not already done
+      drive = google.drive({ version: 'v3', auth: sheets.context.auth });
+      console.log('Google Drive API initialized');
+    }
+    
+    // Request to permanently delete the spreadsheet (not just to trash)
+    await drive.files.delete({
+      fileId: spreadsheetId,
+      supportsAllDrives: true
+    });
+    
+    console.log(`Spreadsheet ${spreadsheetId} permanently deleted`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete spreadsheet: ${error.message}`);
+    throw error;
+  }
+}
+
 module.exports = {
   initializeSheets,
   createSpreadsheet,
   getSpreadsheetData,
   appendRow,
   deleteEntryByUrl,
-  appendWebsiteData  // Add this
+  appendWebsiteData,
+  deleteSpreadsheet  // Add this line
 };
