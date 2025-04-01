@@ -1,81 +1,120 @@
 const express = require("express");
 const { scrapeContent } = require("../scraper/scraperManager");
 const { fetchInstagramPost } = require("../scraper/instaScraper");
-const { scrapePinterest } = require('../scraper/pinterestScraper');
+const { scrapePinterest, loginToPinterest } = require('../scraper/pinterestScraper');
 const SheetsIntegration = require('../../google/integration/sheetsIntegration');
 const tokenStorage = require('../../google/storage/tokenStorage');
 const authHandler = require('../../google/auth/authHandler');
 const sheetsManager = require('../../google/sheets/sheetsManager');
 
-const router = express.Router();
+// Create an instance of SheetsIntegration
 const sheetsIntegration = new SheetsIntegration(tokenStorage, authHandler, sheetsManager);
 
-// URL patterns
+// Define URL patterns for different services
 const pinterestPattern = /(?:https?:\/\/)?(?:www\.)?(?:pinterest\.com|pin\.it)\/([^\/\s]+)/i;
+const router = express.Router();
 
-// Main scraping endpoint
 router.post("/", async (req, res) => {
-    const { url, userId = 'default', chatId } = req.body;
-    
+    const { url } = req.body;
+    const userId = req.body.userId || 'default'; // Add a default userId
+
     if (!url) {
         return res.status(400).json({ success: false, error: "No URL provided" });
     }
 
-    console.log(`🟢 Processing: ${url}`);
+    console.log(`🟢 Received API request for: ${url}`);
 
     try {
-        // Handle scraping based on URL type
-        let result = pinterestPattern.test(url) 
-            ? await handlePinterestScrape(url, userId)
-            : await scrapeContent(url, userId);
+        let result;
+        
+        // Special handling for Pinterest URLs to handle authentication
+        if (pinterestPattern.test(url)) {
+            console.log(`⏱️ Starting Pinterest scrape for: ${url}`);
+            result = await scrapePinterest(url, userId);
             
-        // Handle special Pinterest authentication responses
-        if (result.loginRequired || (result.requiresAuth && result.service === 'pinterest')) {
-            return res.status(401).json({
-                success: false,
-                error: result.error || 'Pinterest login required',
-                requiresAuth: true,
-                service: 'pinterest',
-                userId: result.userId,
-                loginRequired: result.loginRequired
-            });
+            // Special handling for login required
+            if (!result.success && result.loginRequired) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Pinterest login required',
+                    loginRequired: true
+                });
+            }
+            
+            if (!result.success) {
+                // Check if this is an authentication error
+                if (result.requiresAuth && result.service === 'pinterest') {
+                    return res.status(401).json({
+                        success: false,
+                        error: result.error,
+                        errorCode: result.errorCode,
+                        requiresAuth: true,
+                        service: 'pinterest',
+                        userId: result.userId
+                    });
+                }
+            }
+        } else {
+            // For all non-Pinterest URLs, use the general scraper
+            result = await scrapeContent(url, userId);
         }
         
-        // Store in Google Sheets if applicable
-        if (result?.type === 'website' && chatId) {
-            await tryStoreInGoogleSheets(chatId, result, url);
+        console.log(`✅ Scraper Result:`, result);
+        
+        // After scraping is complete and result is available:
+        if (result && result.type === 'website') {
+            const chatId = req.body.chatId || req.body.userId;
+            if (chatId) {
+                try {
+                    // Check if user is connected to Google Sheets
+                    const status = await sheetsIntegration.checkConnection(chatId);
+                    
+                    if (status.connected && status.authentication && !status.spreadsheetMissing) {
+                        // Store scraped data in Google Sheets
+                        await sheetsIntegration.storeWebsiteMetadata(chatId, {
+                            title: result.title,
+                            url: result.originalUrl || url,
+                            description: result.content
+                        });
+                        
+                        // Add flag so client knows data was stored
+                        result.sheetUpdated = true;
+                    }
+                } catch (sheetError) {
+                    console.error(`Failed to store data in Google Sheets: ${sheetError.message}`);
+                    // Don't fail the whole request if Google storage fails
+                }
+            }
         }
         
         if (!result || result.error) {
-            return res.status(500).json({ 
-                success: false, 
-                error: "Scraping failed", 
-                details: result 
-            });
+            return res.status(500).json({ success: false, error: "Scraping failed", details: result });
         }
 
-        return res.json({ success: true, data: result });
+        res.json({ success: true, data: result });
     } catch (error) {
         console.error("❌ Scraper Error:", error);
-        return res.status(500).json({ 
-            success: false, 
-            error: "Scraping failed", 
-            details: error.message 
-        });
+        res.status(500).json({ success: false, error: "Scraping failed", details: error.message });
     }
 });
 
-// Instagram-specific endpoint
+// In your Instagram route handler:
+
 router.post("/instagram", async (req, res) => {
     const startTime = Date.now();
     const { url } = req.body;
+    
+    console.log(`\n🔍 Instagram request received for: ${url}`);
     
     if (!url) {
         return res.status(400).json({ success: false, error: "URL is required" });
     }
 
     try {
+        console.log(`⏱️ Starting Instagram process...`);
         const result = await fetchInstagramPost(url);
+        
+        console.log(`⏱️ API response preparation: ${formatTime(Date.now() - startTime)}`);
         console.log(`✅ Instagram process complete in ${result.performance.totalTime}`);
         
         return res.json({
@@ -87,36 +126,11 @@ router.post("/instagram", async (req, res) => {
         });
     } catch (error) {
         console.error(`❌ Instagram error: ${error.message}`);
-        return res.status(500).json({ success: false, error: error.message });
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 });
-
-// Helper function for Pinterest handling
-async function handlePinterestScrape(url, userId) {
-    console.log(`⏱️ Starting Pinterest scrape for: ${url}`);
-    const result = await scrapePinterest(url, userId);
-    console.log(`✅ Pinterest scrape complete`);
-    return result;
-}
-
-// Helper function for Google Sheets integration
-async function tryStoreInGoogleSheets(chatId, result, url) {
-    try {
-        const status = await sheetsIntegration.checkConnection(chatId);
-        
-        if (status.connected && status.authentication && !status.spreadsheetMissing) {
-            await sheetsIntegration.storeWebsiteMetadata(chatId, {
-                title: result.title,
-                url: result.originalUrl || url,
-                description: result.content
-            });
-            
-            result.sheetUpdated = true;
-        }
-    } catch (error) {
-        console.error(`Failed to store in Google Sheets: ${error.message}`);
-        // Continue execution even if sheet storage fails
-    }
-}
 
 module.exports = router;
