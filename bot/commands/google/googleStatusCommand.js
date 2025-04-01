@@ -15,8 +15,7 @@ async function googleStatusCommand(bot, msg) {
             // User is already connected - show connected message
             await bot.sendMessage(
                 chatId,
-                '✅ You are connected to Google Sheets!\n\n' +
-                'You can use /scrape to save content directly to your spreadsheet.',
+                '✅ You are connected to Google Sheets!\n',
                 {
                     reply_markup: {
                         inline_keyboard: [
