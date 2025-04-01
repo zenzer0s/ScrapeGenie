@@ -10,7 +10,8 @@ env:
   DOCKER_HUB_REPO: "${{ secrets.DOCKER_USERNAME }}/scrapegenie"
   VM_NAME: "${{ secrets.VM_NAME }}"
   VM_ZONE: "${{ secrets.VM_ZONE }}"
-  SERVER_IP: "${{ secrets.SERVER_IP }}"  # Changed to use secrets
+  SERVER_IP: "${{ secrets.SERVER_IP }}"
+  DUCKDNS_DOMAIN: "scrapegenie.duckdns.org"  # Add your DuckDNS domain here
 
 jobs:
   deploy:
@@ -42,18 +43,28 @@ jobs:
         run: |
           gcloud compute ssh $VM_NAME --zone=$VM_ZONE --command '
             # Create directories and ensure proper permissions
-            mkdir -p ~/app/logs ~/app/data
-            chmod -R 755 ~/app/logs ~/app/data
+            mkdir -p ~/app/logs ~/app/data ~/app/google_tokens
+            chmod -R 755 ~/app/logs ~/app/data ~/app/google_tokens
             
-            # Create .env file (simpler approach)
+            # Create .env file with Google OAuth settings
             echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" > ~/app/.env
             echo "USE_WEBHOOK=false" >> ~/app/.env
-            echo "PUBLIC_URL=http://${{ env.SERVER_IP }}:8080" >> ~/app/.env
-            echo "BACKEND_URL=http://${{ env.SERVER_IP }}:8080" >> ~/app/.env
+            echo "PUBLIC_URL=http://${{ env.DUCKDNS_DOMAIN }}:8080" >> ~/app/.env
+            echo "BACKEND_URL=http://${{ env.DUCKDNS_DOMAIN }}:8080" >> ~/app/.env
             echo "PORT=8080" >> ~/app/.env
             echo "NODE_ENV=production" >> ~/app/.env
             echo "PYTHON_PATH=/usr/bin/python3" >> ~/app/.env
-            echo "YT_DLP_PATH=/usr/local/bin/yt-dlp" >> ~/app/.env  # Add this line
+            echo "YT_DLP_PATH=/usr/local/bin/yt-dlp" >> ~/app/.env
+            
+            # Add Google OAuth credentials
+            echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> ~/app/.env
+            echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> ~/app/.env
+            echo "GOOGLE_REDIRECT_URI=http://${{ env.DUCKDNS_DOMAIN }}:8080/api/google/callback" >> ~/app/.env
+            
+            # Update DuckDNS (optional but recommended)
+            if [ ! -z "${{ secrets.DUCKDNS_TOKEN }}" ]; then
+              curl "https://www.duckdns.org/update?domains=${{ env.DUCKDNS_DOMAIN }}&token=${{ secrets.DUCKDNS_TOKEN }}"
+            fi
             
             # Pull the latest Docker image
             sudo docker pull ${{ env.DOCKER_HUB_REPO }}:latest
@@ -62,8 +73,13 @@ jobs:
             sudo docker stop scrapegenie || true
             sudo docker rm scrapegenie || true
             
-            # Start new container with explicit command (no line breaks)
-            sudo docker run -d --name scrapegenie --restart unless-stopped -p 8080:8080 -v ~/app/logs:/app/logs -v ~/app/data:/app/data --env-file ~/app/.env ${{ env.DOCKER_HUB_REPO }}:latest
+            # Start new container with Google tokens volume
+            sudo docker run -d --name scrapegenie --restart unless-stopped \
+              -p 8080:8080 \
+              -v ~/app/logs:/app/logs \
+              -v ~/app/data:/app/data \
+              -v ~/app/google_tokens:/app/google/storage/tokens \
+              --env-file ~/app/.env ${{ env.DOCKER_HUB_REPO }}:latest
             
             # Clean up unused Docker resources
             sudo docker system prune -f
@@ -80,4 +96,4 @@ jobs:
 
       - name: Show Output
         run: |
-          echo "✅ Deployed to http://${{ env.SERVER_IP }}:8080"
+          echo "✅ Deployed to http://${{ env.DUCKDNS_DOMAIN }}:8080"
