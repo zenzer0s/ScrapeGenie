@@ -319,6 +319,152 @@ class SheetsIntegration {
             };
         }
     }
+
+    /**
+     * Handle authentication for a returning or new user
+     * @param {string} chatId - The user's chat ID
+     * @param {Object} tokens - OAuth tokens
+     * @returns {Promise<Object>} - Result with returning user status
+     */
+    async handleReturningUser(chatId, tokens) {
+        try {
+            console.log(`[SHEETS] Handling authentication for user ${chatId}`);
+            
+            // Get existing user data
+            let userData = await this.tokenStorage.getTokens(chatId) || {};
+            
+            // Set the new tokens
+            userData.tokens = tokens;
+            
+            // Check if user has a previous spreadsheet
+            if (userData.spreadsheetId) {
+                console.log(`[SHEETS] Found existing spreadsheet ${userData.spreadsheetId} for user ${chatId}`);
+                try {
+                    // Verify sheet still exists
+                    this.authHandler.setCredentials(tokens);
+                    const authClient = this.authHandler.getAuthClient();
+                    this.sheetsManager.initializeSheets(authClient);
+                    
+                    // Try to get spreadsheet data to verify it exists
+                    await this.sheetsManager.getSpreadsheetData(userData.spreadsheetId);
+                    
+                    // Spreadsheet exists, update tokens but keep the sheet ID
+                    console.log(`[SHEETS] Existing spreadsheet verified, updating tokens for user ${chatId}`);
+                    await this.tokenStorage.saveTokens(chatId, userData);
+                    
+                    return {
+                        success: true,
+                        isReturning: true,
+                        spreadsheetId: userData.spreadsheetId,
+                        createdAt: userData.spreadsheetCreatedAt
+                    };
+                } catch (error) {
+                    // Spreadsheet was deleted or inaccessible, need to create a new one
+                    console.log(`[SHEETS] Previous spreadsheet not accessible, creating new one for user ${chatId}`);
+                    userData.spreadsheetId = null;
+                    userData.spreadsheetCreatedAt = null;
+                    await this.tokenStorage.saveTokens(chatId, userData);
+                    
+                    // Create new spreadsheet
+                    return await this.createNewSpreadsheetForUser(chatId, tokens);
+                }
+            } else {
+                // No previous spreadsheet, create new
+                console.log(`[SHEETS] No previous spreadsheet found, creating new one for user ${chatId}`);
+                return await this.createNewSpreadsheetForUser(chatId, tokens);
+            }
+        } catch (error) {
+            console.error(`[SHEETS] Error handling returning user: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Create a new spreadsheet for a user
+     * @param {string} chatId - User's chat ID
+     * @param {Object} tokens - OAuth tokens
+     * @returns {Promise<Object>} - Creation result
+     */
+    async createNewSpreadsheetForUser(chatId, tokens) {
+        try {
+            console.log(`[SHEETS] Creating new spreadsheet for user ${chatId}`);
+            
+            // Set credentials and create sheet
+            this.authHandler.setCredentials(tokens);
+            const authClient = this.authHandler.getAuthClient();
+            this.sheetsManager.initializeSheets(authClient);
+            
+            const spreadsheetId = await this.sheetsManager.createSpreadsheet(`ScrapeGenie - ${chatId}`);
+            console.log(`[SHEETS] Created new spreadsheet ${spreadsheetId} for user ${chatId}`);
+            
+            // Save with new sheet ID and timestamp
+            const userData = await this.tokenStorage.getTokens(chatId) || {};
+            userData.tokens = tokens;
+            userData.spreadsheetId = spreadsheetId;
+            userData.spreadsheetCreatedAt = new Date().toISOString();
+            
+            await this.tokenStorage.saveTokens(chatId, userData);
+            
+            return {
+                success: true,
+                isReturning: false,
+                spreadsheetId
+            };
+        } catch (error) {
+            console.error(`[SHEETS] Failed to create new spreadsheet: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete existing spreadsheet and create a new one
+     * @param {string} chatId - User's chat ID
+     * @returns {Promise<Object>} - Result with new spreadsheet ID
+     */
+    async recreateSpreadsheet(chatId) {
+        try {
+            console.log(`[SHEETS] Recreating spreadsheet for user ${chatId}`);
+            const userData = await this.tokenStorage.getTokens(chatId);
+            
+            if (!userData || !userData.tokens) {
+                throw new Error('User not authenticated with Google');
+            }
+            
+            // Set up auth
+            this.authHandler.setCredentials(userData.tokens);
+            const authClient = this.authHandler.getAuthClient();
+            this.sheetsManager.initializeSheets(authClient);
+            
+            // Delete old spreadsheet if it exists
+            if (userData.spreadsheetId) {
+                try {
+                    console.log(`[SHEETS] Attempting to delete old spreadsheet ${userData.spreadsheetId}`);
+                    await this.sheetsManager.deleteSpreadsheet(userData.spreadsheetId);
+                    console.log(`[SHEETS] Successfully deleted old spreadsheet`);
+                } catch (error) {
+                    console.error(`[SHEETS] Error deleting old spreadsheet: ${error.message}`);
+                    // Continue even if delete fails
+                }
+            }
+            
+            // Create new spreadsheet
+            const spreadsheetId = await this.sheetsManager.createSpreadsheet(`ScrapeGenie - ${chatId}`);
+            console.log(`[SHEETS] Created new spreadsheet ${spreadsheetId} for user ${chatId}`);
+            
+            // Update user data
+            userData.spreadsheetId = spreadsheetId;
+            userData.spreadsheetCreatedAt = new Date().toISOString();
+            await this.tokenStorage.saveTokens(chatId, userData);
+            
+            return {
+                success: true,
+                spreadsheetId
+            };
+        } catch (error) {
+            console.error(`[SHEETS] Failed to recreate spreadsheet: ${error.message}`);
+            throw error;
+        }
+    }
 }
 
 module.exports = SheetsIntegration;

@@ -28,7 +28,7 @@ async function handleYoutube(bot, chatId, url, data) {
       caption += data.title;
       stepLogger.debug('YOUTUBE_TITLE', { title: data.title.substring(0, 50) });
     } else {
-      caption += 'YouTube Video';
+      //caption += 'YouTube Video';
     }
     
     // Add channel name if available (without Markdown)

@@ -2,52 +2,86 @@ const googleConnectCommand = require('./googleConnectCommand');
 const googleStatusCommand = require('./googleStatusCommand');
 const googleDisconnectCommand = require('./googleDisconnectCommand');
 const googleSheetCommand = require('./googleSheetCommand');
+const googleService = require('../../services/googleService'); // Add this at the top with your other imports
+const { deleteMessageAfterDelay } = require('../../utils/messageUtils'); // Import the utility at the top of the file
 
-// Create your handleDisconnectCallback function here
+// Update the handleDisconnectCallback function to remove deleteMessageAfterDelay
 async function handleDisconnectCallback(bot, query) {
     const chatId = query.message.chat.id;
+    const action = query.data;
+    
     try {
-        // Your disconnect logic here
-        if (query.data === 'google_disconnect_confirm') {
-            // Handle confirmation
-            const googleService = require('../../services/googleService');
-            await googleService.disconnectGoogle(chatId);
+        // If user wants to disconnect
+        if (action === 'google_disconnect_confirm') {
+            await bot.answerCallbackQuery(query.id);
             
-            await bot.answerCallbackQuery(query.id, {
-                text: '✅ Google Sheets disconnected successfully!',
-                show_alert: true
-            });
-            
-            // Update the message
+            // Update message to show progress
             await bot.editMessageText(
-                '❌ Google Sheets is now disconnected. Your data will no longer be saved to Google Sheets.',
+                '🔄 Disconnecting from Google Sheets...',
                 {
                     chat_id: chatId,
-                    message_id: query.message.message_id,
-                    parse_mode: 'Markdown'
+                    message_id: query.message.message_id
                 }
             );
+            
+            // Call the service to disconnect
+            const response = await googleService.disconnect(chatId);
+            
+            if (response.success) {
+                // Update message to show success
+                await bot.editMessageText(
+                    '✅ Successfully disconnected from Google Sheets.\n\n' +
+                    'Your spreadsheet information has been preserved. If you reconnect later, ' +
+                    'you\'ll be able to access your existing spreadsheet.',
+                    {
+                        chat_id: chatId,
+                        message_id: query.message.message_id,
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: '🔄 Reconnect', callback_data: 'google_connect' }]
+                            ]
+                        }
+                    }
+                );
+                
+                // If you want to keep this behavior, use our new utility:
+                // await deleteMessageAfterDelay(bot, chatId, query.message.message_id, 7000);
+                // Otherwise, just remove this line completely
+            } else {
+                await bot.editMessageText(
+                    `❌ Failed to disconnect: ${response.error || 'Unknown error'}`,
+                    {
+                        chat_id: chatId,
+                        message_id: query.message.message_id
+                    }
+                );
+            }
         } else {
-            // Handle cancellation
+            // User canceled the disconnect
             await bot.answerCallbackQuery(query.id, {
-                text: 'Operation cancelled',
-                show_alert: true
+                text: 'Disconnect canceled'
             });
             
-            // Update the message
+            // Update message to show connection status
             await bot.editMessageText(
-                '✅ Google Sheets remains connected.',
+                '✅ You are still connected to Google Sheets.\n\n' +
+                'You can continue using Google Sheets integration normally.',
                 {
                     chat_id: chatId,
                     message_id: query.message.message_id,
-                    parse_mode: 'Markdown'
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '📊 View Spreadsheet', callback_data: 'google_sheet' }],
+                            [{ text: '❌ Disconnect Google', callback_data: 'google_disconnect' }]
+                        ]
+                    }
                 }
             );
         }
     } catch (error) {
-        console.error('Google disconnect error:', error);
+        console.error('Error in handleDisconnectCallback:', error);
         await bot.answerCallbackQuery(query.id, {
-            text: '❌ Failed to process your request',
+            text: 'An error occurred. Please try again.',
             show_alert: true
         });
     }
@@ -74,7 +108,6 @@ async function handleCreateSheetCallback(bot, query) {
         );
         
         // Create new spreadsheet
-        const googleService = require('../../services/googleService');
         const result = await googleService.createNewSpreadsheet(chatId);
         
         if (result.success) {
@@ -114,6 +147,77 @@ async function handleCreateSheetCallback(bot, query) {
     }
 }
 
+// Add this new callback handler for recreating spreadsheets
+async function handleRecreateSheetCallback(bot, query) {
+    const chatId = query.message.chat.id;
+    
+    try {
+        // Show processing status
+        await bot.answerCallbackQuery(query.id, {
+            text: 'Processing your request...'
+        });
+        
+        // Update message to show progress
+        await bot.editMessageText(
+            '🔄 Deleting your old spreadsheet and creating a new one...',
+            {
+                chat_id: chatId,
+                message_id: query.message.message_id
+            }
+        );
+        
+        // Call API to recreate spreadsheet
+        const response = await googleService.recreateSpreadsheet(chatId);
+        
+        if (response.success) {
+            // Success message
+            await bot.editMessageText(
+                '✅ Your Google spreadsheet has been recreated successfully!\n\n' +
+                'Your previous data has been deleted and a fresh spreadsheet is ready to use.',
+                {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: '📊 View Spreadsheet', callback_data: 'google_sheet' }]
+                        ]
+                    }
+                }
+            );
+        } else {
+            // Error message
+            await bot.editMessageText(
+                `❌ Failed to recreate spreadsheet: ${response.error || 'Unknown error'}`,
+                {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: 'Try Again', callback_data: 'google_recreate_sheet' }],
+                            [{ text: '« Back', callback_data: 'google_status' }]
+                        ]
+                    }
+                }
+            );
+        }
+    } catch (error) {
+        console.error('Error in handleRecreateSheetCallback:', error);
+        await bot.editMessageText(
+            '❌ Failed to recreate spreadsheet. Please try again later.',
+            {
+                chat_id: chatId,
+                message_id: query.message.message_id,
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: 'Try Again', callback_data: 'google_recreate_sheet' }],
+                        [{ text: '« Back', callback_data: 'google_status' }]
+                    ]
+                }
+            }
+        );
+    }
+}
+
 // Map of commands to their handlers
 const googleCommands = {
     'google_connect': googleConnectCommand,
@@ -125,7 +229,8 @@ const googleCommands = {
 const googleCallbacks = {
     'google_disconnect_confirm': handleDisconnectCallback,
     'google_disconnect_cancel': handleDisconnectCallback,
-    'google_create_sheet': handleCreateSheetCallback  // Add the new callback handler
+    'google_create_sheet': handleCreateSheetCallback,
+    'google_recreate_sheet': handleRecreateSheetCallback  // Add this line
 };
 
 // Register Google commands with bot
@@ -154,5 +259,6 @@ module.exports = {
     googleDisconnectCommand,
     googleSheetCommand,
     handleDisconnectCallback,
-    handleCreateSheetCallback  // Export the new handler
+    handleCreateSheetCallback,
+    handleRecreateSheetCallback  // Add this to exports
 };

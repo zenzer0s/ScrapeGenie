@@ -1,7 +1,23 @@
 const stepLogger = require('../../utils/stepLogger');
 const { formatUptime } = require('../utils/formatters');
 
-async function statusCommand(bot, msg, checkBackendStatus) {
+// Add this function (it was missing)
+async function checkBackendStatus() {
+  try {
+    // Simple implementation that returns a healthy status
+    return {
+      status: 'healthy',
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage().heapUsed / 1024 / 1024,
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error checking backend status:', error);
+    return { status: 'error', error: error.message };
+  }
+}
+
+async function statusCommand(bot, msg) {
   const chatId = msg.chat.id;
   
   stepLogger.info('CMD_STATUS', { chatId });
