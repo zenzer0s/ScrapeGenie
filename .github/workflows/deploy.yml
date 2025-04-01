@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-     # - master
+      - master
 
 env:
   DOCKER_HUB_REPO: "${{ secrets.DOCKER_USERNAME }}/scrapegenie"
