@@ -9,6 +9,25 @@ document.addEventListener('DOMContentLoaded', function() {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
         
+        // Add before the fetch call:
+        if (!username || username.trim() === '') {
+            messageDiv.textContent = 'Please enter your Pinterest username';
+            messageDiv.classList.remove('hidden', 'success');
+            messageDiv.classList.add('error');
+            submitBtn.innerHTML = 'Connect Pinterest Account';
+            submitBtn.disabled = false;
+            return;
+        }
+
+        if (!password) {
+            messageDiv.textContent = 'Please enter your Pinterest password';
+            messageDiv.classList.remove('hidden', 'success');
+            messageDiv.classList.add('error');
+            submitBtn.innerHTML = 'Connect Pinterest Account';
+            submitBtn.disabled = false;
+            return;
+        }
+        
         // Get the token from URL
         const token = window.location.pathname.split('/').pop();
         
@@ -16,10 +35,13 @@ document.addEventListener('DOMContentLoaded', function() {
         submitBtn.disabled = true;
         
         try {
+            const csrfToken = document.getElementById('csrfToken').value;
+            
             const response = await fetch(`/api/auth/login/${token}`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({ username, password })
             });
@@ -36,10 +58,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Notify parent window if this was opened in a popup
                 if (window.opener) {
-                    window.opener.postMessage({ type: 'pinterest_connected', success: true }, '*');
+                    const allowedOrigin = window.location.origin;
+                    window.opener.postMessage({ type: 'pinterest_connected', success: true }, allowedOrigin);
                 }
             } else {
-                messageDiv.textContent = data.error || 'Connection failed. Please check your credentials and try again.';
+                if (data.error === 'invalid_credentials') {
+                    messageDiv.textContent = 'Incorrect username or password. Please try again.';
+                } else if (data.error === 'account_locked') {
+                    messageDiv.textContent = 'Your account appears to be locked. Please verify it through Pinterest first.';
+                } else {
+                    messageDiv.textContent = data.error || 'Connection failed. Please check your credentials and try again.';
+                }
                 messageDiv.classList.remove('hidden', 'success');
                 messageDiv.classList.add('error');
                 
