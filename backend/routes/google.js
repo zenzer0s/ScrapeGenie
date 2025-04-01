@@ -5,6 +5,8 @@ const AuthHandler = require('../../google/auth/authHandler');
 const SheetsManager = require('../../google/sheets/sheetsManager');
 const SheetsIntegration = require('../../google/integration/sheetsIntegration');
 const { GOOGLE_CONFIG } = require('../../google/config/config');
+const path = require('path');
+const axios = require('axios');
 
 // Create instances - only once
 const tokenStorage = require('../../google/storage/tokenStorage');
@@ -139,104 +141,156 @@ router.post('/store-metadata', async (req, res) => {
   }
 });
 
+// Update auth URL generation route
 router.get('/auth-url', async (req, res) => {
   try {
-    const { chatId } = req.query;
+    const { chatId, returning } = req.query;
     
     if (!chatId) {
-      return res.status(400).json({ error: 'chatId is required' });
+      return res.status(400).json({ error: 'Missing chatId parameter' });
     }
     
-    console.log(`Generating auth URL for chatId: ${chatId}`);
+    console.log(`Generating auth URL for chatId: ${chatId}, returning: ${returning}`);
     
-    // Generate a state parameter that includes the chatId (for security)
-    const state = Buffer.from(chatId).toString('base64');
+    // Pass the returning parameter in state to the callback
+    const state = returning === 'true' ? 
+      `${chatId}:returning` : 
+      chatId;
     
-    // Generate the authentication URL
-    const authUrl = authHandler.generateAuthUrl(state);
-    
+    const authUrl = authHandler.getAuthUrl(state);
     console.log(`Auth URL generated: ${authUrl.substring(0, 100)}...`);
     
-    // Return the URL to the client
-    res.json({ url: authUrl });
+    res.json({ authUrl });
   } catch (error) {
     console.error('Error generating auth URL:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get('/auth/google', (req, res) => {
-  // Generate a random state for security
-  const state = Buffer.from(Date.now().toString()).toString('base64');
-  const authUrl = authHandler.generateAuthUrl(state);
-  res.redirect(authUrl);
-});
-
+// Update callback handler to parse the returning parameter
 router.get('/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
     
-    if (!code || !state) {
-      return res.status(400).send('Invalid request: Missing code or state');
+    if (!code) {
+      console.error('No authorization code found in callback');
+      return res.status(400).send('Authentication failed: No authorization code received');
     }
     
-    console.log('[CALLBACK] Received authorization code');
+    // Parse state parameter to get chatId and returning status
+    let chatId, isReturning = false;
     
-    // Decode chatId from state
-    const chatId = Buffer.from(state, 'base64').toString();
-    console.log(`[CALLBACK] Decoded chatId: ${chatId}`);
+    if (state.includes(':returning')) {
+      [chatId, _] = state.split(':');
+      isReturning = true;
+    } else {
+      chatId = state;
+    }
+    
+    console.log(`[CALLBACK] Decoded chatId: ${chatId}, isReturning: ${isReturning}`);
     
     // Exchange code for tokens
-    console.log('Exchanging authorization code for tokens');
     const tokens = await authHandler.getTokensFromCode(code);
-    console.log('Tokens retrieved successfully');
-    console.log('[CALLBACK] Retrieved tokens successfully');
+    console.log(`Tokens retrieved successfully`);
     
-    // Save tokens
-    await tokenStorage.saveTokens(chatId, { tokens });
-    console.log(`[CALLBACK] Tokens saved for user ${chatId}`);
+    // Use the returning flag to prioritize finding existing spreadsheets
+    const result = await sheetsIntegration.handleReturningUser(chatId, tokens, isReturning);
     
-    try {
-      // Set up user's spreadsheet
-      console.log(`Setting up sheet for user: ${chatId}`);
-      await sheetsIntegration.setupUserSheet(chatId);
-      console.log('Sheet setup complete');
-      
-      // Redirect to success page
-      return res.redirect('/auth-success.html');
-    } catch (setupError) {
-      console.error('[CALLBACK] Error during sheet setup:', setupError);
-      return res.status(500).send('Authentication successful, but sheet setup failed. Please try again.');
-    }
+    // After successful authentication, redirect to the auto-closing success page
+    return res.redirect(`/api/google/success?chatId=${chatId}&returning=${result.isReturning}`);
   } catch (error) {
     console.error('[CALLBACK] Error:', error);
     return res.status(500).send('Authentication failed. Please try again.');
   }
 });
 
+// Update the success route to serve the HTML with the right params
+router.get('/success', (req, res) => {
+  // Pass parameters in the URL for the JS to use
+  res.sendFile(path.join(__dirname, '../public/auth-success.html'));
+});
+
 router.get('/status', async (req, res) => {
   try {
-    console.log('Status endpoint called with params:', req.query);
     const { chatId } = req.query;
     
     if (!chatId) {
-      return res.status(400).json({ error: 'Chat ID required' });
+      return res.status(400).json({ error: 'chatId parameter is required' });
     }
     
-    console.log(`Checking connection for chatId: ${chatId}`);
+    console.log(`Status endpoint called with params: ${JSON.stringify(req.query)}`);
     
-    // Get detailed connection status
-    const status = await sheetsIntegration.checkConnection(chatId);
-    console.log(`Connection status for ${chatId}:`, status);
+    // Get user data
+    const userData = await tokenStorage.getTokens(chatId);
     
-    res.json(status);
-  } catch (error) {
-    console.error('Error checking status:', error);
-    res.status(500).json({ 
+    // Basic response structure
+    const response = {
       connected: false,
-      error: error.message,
-      message: "Error checking connection status"
-    });
+      authentication: false,
+      spreadsheetMissing: true,
+      message: 'Not connected to Google Sheets'
+    };
+    
+    if (!userData) {
+      return res.json(response);
+    }
+    
+    // Check if user has tokens
+    if (userData.tokens) {
+      response.connected = true;
+      response.authentication = true;
+      
+      // Add returning user information
+      if (userData.spreadsheetCreatedAt) {
+        response.spreadsheetCreatedAt = userData.spreadsheetCreatedAt;
+        response.daysSinceCreation = Math.floor(
+          (new Date() - new Date(userData.spreadsheetCreatedAt)) / (1000 * 60 * 60 * 24)
+        );
+      }
+      
+      if (userData.disconnectedAt) {
+        response.lastDisconnect = userData.disconnectedAt;
+      }
+      
+      // Check if spreadsheet exists
+      try {
+        authHandler.setCredentials(userData.tokens);
+        const authClient = authHandler.getAuthClient();
+        sheetsManager.initializeSheets(authClient);
+        
+        if (userData.spreadsheetId) {
+          // Try to access the spreadsheet
+          await sheetsManager.getSpreadsheetData(userData.spreadsheetId);
+          response.spreadsheetMissing = false;
+          response.spreadsheetId = userData.spreadsheetId;
+          response.message = 'Connected to Google Sheets';
+        } else {
+          response.message = 'Authentication successful, but no spreadsheet is linked';
+        }
+      } catch (error) {
+        console.error(`Error checking spreadsheet: ${error.message}`);
+        
+        if (error.message.includes('not found') || error.message.includes('does not exist')) {
+          response.message = 'Authentication successful, but spreadsheet not found';
+        } else {
+          response.message = `Authentication successful, but spreadsheet access failed: ${error.message}`;
+        }
+      }
+    } else if (userData.spreadsheetId) {
+      // User has a saved spreadsheet but no tokens
+      response.connected = true;
+      response.authentication = false;
+      response.spreadsheetId = userData.spreadsheetId;
+      response.spreadsheetCreatedAt = userData.spreadsheetCreatedAt;
+      response.disconnectedAt = userData.disconnectedAt;
+      response.message = 'Spreadsheet exists but requires authentication';
+    }
+    
+    console.log(`Connection status for ${chatId}: ${JSON.stringify(response)}`);
+    return res.json(response);
+  } catch (error) {
+    console.error(`Status endpoint error: ${error.message}`);
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -254,6 +308,33 @@ router.post('/disconnect', async (req, res) => {
   } catch (error) {
     console.error('Disconnect error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Add this endpoint
+router.post('/disconnect', async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    
+    if (!chatId) {
+      return res.status(400).json({ error: 'chatId is required' });
+    }
+    
+    console.log(`Disconnecting Google for user ${chatId}`);
+    
+    // Remove tokens but preserve spreadsheet ID
+    await tokenStorage.removeTokens(chatId);
+    
+    return res.json({
+      success: true,
+      message: 'Successfully disconnected from Google Sheets'
+    });
+  } catch (error) {
+    console.error('Error disconnecting from Google:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
@@ -326,6 +407,57 @@ router.post('/create-spreadsheet', async (req, res) => {
       error: error.message,
       message: "Failed to create spreadsheet"
     });
+  }
+});
+
+// Replace your notify-bot endpoint with this simpler version
+router.post('/notify-bot', async (req, res) => {
+  try {
+    const { chatId, isReturning } = req.body;
+    
+    if (!chatId) {
+      return res.status(400).json({ error: 'chatId is required' });
+    }
+    
+    console.log(`🔔 Attempting to notify user ${chatId} about successful auth (returning: ${isReturning})`);
+    
+    // Get connection details
+    const userData = await tokenStorage.getTokens(chatId);
+    const spreadsheetId = userData?.spreadsheetId || 'Unknown';
+    
+    // Generate appropriate message
+    const message = isReturning ? 
+      `✅ Welcome back! You've been reconnected to your Google Sheets account.\n\nYour existing spreadsheet is ready to use.` :
+      `✅ You've been successfully connected to Google Sheets!\n\nA new spreadsheet has been created for you.`;
+    
+    // DIRECT BOT IMPORT - this avoids routing issues
+    try {
+      // Use relative path to find the bot
+      const botPath = path.resolve(__dirname, '../../bot/bot.js');
+      console.log(`Looking for bot at: ${botPath}`);
+      
+      // Import the bot
+      const bot = require(botPath);
+      
+      // Send message with button
+      await bot.sendMessage(chatId, message, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📊 View Spreadsheet', callback_data: 'google_sheet' }]
+          ]
+        }
+      });
+      
+      console.log(`✅ Bot notification successfully sent to ${chatId}`);
+    } catch (error) {
+      console.error(`❌ Error sending bot message: ${error.message}`);
+      console.error(error.stack);
+    }
+    
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Error in notify-bot:', error);
+    return res.status(500).json({ error: error.message });
   }
 });
 
