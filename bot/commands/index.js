@@ -11,10 +11,6 @@ const pinterestLoginCommand = require('./pinterest/pinterestLoginCommand');
 const pinterestLogoutCommand = require('./pinterest/pinterestLogoutCommand');
 const pinterestStatusCommand = require('./pinterest/pinterestStatusCommand');
 
-// Admin commands
-const addAdminCommand = require('./admin/addAdminCommand');
-const removeAdminCommand = require('./admin/removeAdminCommand');
-
 // Export directly - NO imports from handlers here
 module.exports = {
   // General commands
@@ -29,8 +25,4 @@ module.exports = {
   pinterestLoginCommand,
   pinterestLogoutCommand,
   pinterestStatusCommand,
-  
-  // Admin commands
-  addAdminCommand,
-  removeAdminCommand,
 };
