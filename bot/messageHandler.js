@@ -148,7 +148,5 @@ async function handleQueueCommand(bot, msg) {
 }
 
 module.exports = { 
-  handleMessage,
-  handleQueueCommand,
-  processUrlDirectly
+  handleMessage
 };
