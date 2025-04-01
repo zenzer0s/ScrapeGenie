@@ -10,19 +10,43 @@ class GoogleService {
         });
     }
 
-    async getAuthUrl(chatId) {
+    /**
+     * Get Google authentication URL
+     * @param {string} chatId - The user's chat ID
+     * @param {Object} options - Additional options
+     * @returns {Promise<string>} - Authentication URL
+     */
+    async getAuthUrl(chatId, options = {}) {
         try {
             stepLogger.info('GOOGLE_AUTH_URL_REQUEST', { chatId });
-            const response = await this.api.get(`/api/google/auth-url?chatId=${chatId}`);
             
-            if (!response.data || !response.data.url) {
-                throw new Error('Invalid response from server');
-            }
+            // First check if user has existing spreadsheet data
+            const status = await this.getDetailedStatus(chatId);
+            const hasExistingSheet = status && status.spreadsheetId && 
+                (status.connected || status.disconnectedAt);
             
-            return response.data.url;
+            // Always include returning=true if the user has an existing spreadsheet
+            const params = hasExistingSheet ? 
+                { ...options, returning: true } : 
+                options;
+            
+            // Generate auth URL with appropriate parameters
+            const response = await this.api.get(`/api/google/auth-url`, {
+                params: {
+                    chatId,
+                    ...params
+                }
+            });
+            
+            stepLogger.debug('GOOGLE_AUTH_URL_RESPONSE', { 
+                chatId, 
+                hasExistingSheet
+            });
+            
+            return response.data.authUrl;
         } catch (error) {
-            stepLogger.error(`GOOGLE_AUTH_URL_ERROR: ${error.message}`, { chatId });
-            throw new Error('Failed to generate authentication URL');
+            stepLogger.error('GOOGLE_AUTH_URL_ERROR', { chatId, error: error.message });
+            throw error;
         }
     }
 
@@ -54,6 +78,37 @@ class GoogleService {
         } catch (error) {
             stepLogger.error(`GOOGLE_DISCONNECT_ERROR: ${error.message}`, { chatId });
             throw new Error('Failed to disconnect Google account');
+        }
+    }
+
+    // Add this method to the GoogleService class
+    async disconnect(chatId) {
+        try {
+            stepLogger.info('GOOGLE_DISCONNECT_REQUEST', { chatId });
+            
+            // Call the API endpoint to disconnect (preserve spreadsheet ID)
+            const response = await this.api.post('/api/google/disconnect', { chatId });
+            
+            stepLogger.debug('GOOGLE_DISCONNECT_RESPONSE', { 
+                chatId, 
+                response: JSON.stringify(response.data) 
+            });
+            
+            return {
+                success: true,
+                message: "Successfully disconnected from Google Sheets"
+            };
+        } catch (error) {
+            stepLogger.error('GOOGLE_DISCONNECT_ERROR', { 
+                chatId, 
+                error: error.message 
+            });
+            
+            return {
+                success: false,
+                error: error.message,
+                message: "Failed to disconnect from Google Sheets"
+            };
         }
     }
 
@@ -213,7 +268,11 @@ class GoogleService {
             // Use this.api which is already configured with the baseURL
             const response = await this.api.get(`/api/google/status?chatId=${chatId}`);
             
-            stepLogger.debug('GOOGLE_STATUS_RESPONSE', { chatId, response: JSON.stringify(response.data).substring(0, 100) + '...' });
+            stepLogger.debug('GOOGLE_STATUS_RESPONSE', { 
+                chatId, 
+                response: JSON.stringify(response.data).substring(0, 100) + '...' 
+            });
+            
             return response.data;
         } catch (error) {
             stepLogger.error('GOOGLE_STATUS_CHECK_ERROR', { chatId, error: error.message });
@@ -241,6 +300,38 @@ class GoogleService {
                 success: false, 
                 error: error.message,
                 message: "Failed to create spreadsheet"
+            };
+        }
+    }
+
+    /**
+     * Recreate a spreadsheet for an authenticated user
+     * @param {string} chatId - The Telegram chat ID
+     * @returns {Promise<Object>} - Result with success status
+     */
+    async recreateSpreadsheet(chatId) {
+        try {
+            stepLogger.info('GOOGLE_RECREATE_SPREADSHEET', { chatId });
+            
+            // Call the API endpoint to recreate spreadsheet
+            const response = await this.api.post('/api/google/recreate-spreadsheet', { chatId });
+            
+            stepLogger.debug('GOOGLE_RECREATE_SPREADSHEET_RESPONSE', { 
+                chatId, 
+                response: JSON.stringify(response.data)
+            });
+            
+            return response.data;
+        } catch (error) {
+            stepLogger.error('GOOGLE_RECREATE_SPREADSHEET_ERROR', { 
+                chatId, 
+                error: error.message 
+            });
+            
+            return {
+                success: false,
+                error: error.message,
+                message: "Failed to recreate spreadsheet"
             };
         }
     }
