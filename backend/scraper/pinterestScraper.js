@@ -45,31 +45,29 @@ async function checkImageQuality(url) {
   }
 }
 
-// Added login function from old.js
+// Update the loginToPinterest function to use direct data
 async function loginToPinterest(username, password) {
   try {
-    // Create a temporary session file path
+    // Create a temporary session file path (keep this for compatibility)
     const tempSessionPath = path.join(__dirname, '..', '..', 'data', 'temp_session.json');
     
-    // Use your existing auth function
-    const success = await captureAuthSession(username, password, tempSessionPath);
+    // Use auth function but get data directly
+    const sessionResult = await captureAuthSession(username, password, tempSessionPath);
     
-    if (!success) {
+    // Check if login was successful
+    if (!sessionResult.success) {
       return { 
         success: false, 
-        error: 'Authentication failed' 
+        error: sessionResult.error || 'Authentication failed' 
       };
     }
     
-    // Read the session data
-    const sessionData = JSON.parse(fs.readFileSync(tempSessionPath, 'utf8'));
-    
-    // Return in the format expected by auth.js
+    // Return session data directly instead of reading from file
     return {
       success: true,
-      cookies: sessionData.cookies,
-      localStorage: sessionData.localStorage,
-      userAgent: sessionData.userAgent
+      cookies: sessionResult.cookies,
+      localStorage: sessionResult.localStorage,
+      userAgent: sessionResult.userAgent
     };
   } catch (error) {
     console.error('Pinterest login error:', error);
