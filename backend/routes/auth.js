@@ -86,8 +86,10 @@ router.post('/login/:token', async (req, res) => {
     const result = await pinterestScraper.loginToPinterest(username, password);
     
     if (!result.success) {
-      console.log(`Login failed: ${result.error}`);
-      return res.status(401).json({ success: false, error: result.error });
+      return res.json({
+        success: false,
+        error: result.error || 'Failed to log in. Please check your credentials.'
+      });
     }
     
     // Save the session using sessionManager
@@ -99,7 +101,7 @@ router.post('/login/:token', async (req, res) => {
       createdAt: Date.now()
     });
     
-    // Clean up the pending login
+    // Clean up the token immediately
     pendingLogins.delete(token);
     
     console.log(`Login successful for user: ${userId}`);
@@ -151,5 +153,17 @@ router.post('/logout', (req, res) => {
     loggedOut: result
   });
 });
+
+// Simple periodic cleanup for inactive sessions
+setInterval(() => {
+  const now = Date.now();
+  userSessions.forEach((session, userId) => {
+    if (session.lastActivity && now - session.lastActivity > 7 * 24 * 60 * 60 * 1000) {
+      // Inactive for 7 days
+      console.log(`Cleaning up inactive session for user ${userId}`);
+      userSessions.delete(userId);
+    }
+  });
+}, 24 * 60 * 60 * 1000); // Run once a day
 
 module.exports = router;
