@@ -35,14 +35,42 @@ class TokenStorage {
         }
     }
 
-    async removeTokens(userId) {
-        const filePath = path.join(this.storagePath, `${userId}.json`);
-        if (fs.existsSync(filePath)) {
-            await fs.promises.unlink(filePath);
-            console.log(`Removed tokens for user: ${userId}`);
+    async saveSpreadsheetId(chatId, spreadsheetId) {
+        try {
+            const userData = await this.getTokens(chatId) || {};
+            userData.spreadsheetId = spreadsheetId;
+            userData.spreadsheetCreatedAt = userData.spreadsheetCreatedAt || new Date().toISOString();
+            await this.saveTokens(chatId, userData);
+            console.log(`Saved spreadsheet ID ${spreadsheetId} for user ${chatId}`);
             return true;
+        } catch (error) {
+            console.error(`Failed to save spreadsheet ID: ${error.message}`);
+            return false;
         }
-        return false;
+    }
+
+    async removeTokens(chatId) {
+        try {
+            const filePath = path.join(this.storagePath, `${chatId}.json`);
+            if (fs.existsSync(filePath)) {
+                const userData = await this.getTokens(chatId);
+                if (userData && userData.spreadsheetId) {
+                    console.log(`Preserving spreadsheet ID ${userData.spreadsheetId} for user ${chatId}`);
+                    const preservedData = {
+                        spreadsheetId: userData.spreadsheetId,
+                        spreadsheetCreatedAt: userData.spreadsheetCreatedAt,
+                        disconnectedAt: new Date().toISOString()
+                    };
+                    await this.saveTokens(chatId, preservedData);
+                } else {
+                    fs.unlinkSync(filePath);
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error(`Failed to safely remove tokens: ${error.message}`);
+            return false;
+        }
     }
 
     async hasTokens(userId) {
