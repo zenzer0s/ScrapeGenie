@@ -50,6 +50,7 @@ RUN timeout 60s pip3 install --no-cache-dir -r requirements.txt || \
 # Copy only necessary application files
 COPY bot ./bot
 COPY backend ./backend
+COPY google ./google  
 COPY example.env ./.env.example
 
 # Create necessary directories with proper permissions
