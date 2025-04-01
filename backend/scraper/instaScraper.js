@@ -4,7 +4,6 @@ const fs = require("fs");
 
 const formatTime = ms => (ms / 1000).toFixed(2) + 's';
 const DOWNLOAD_DIR = "/dev/shm/instagram_tmp";
-const CLEANUP_DELAY = 5 * 60 * 1000; // 5 minutes
 const SCRIPT_PATH = path.join(__dirname, "instaDownloader.py");
 const PYTHON_PATH = process.env.PYTHON_PATH || "/usr/bin/python3";
 
@@ -12,11 +11,9 @@ async function fetchInstagramPost(url) {
     return new Promise((resolve, reject) => {
         const startTime = Date.now();
         
-        // Ensure download directory exists
-        if (!fs.existsSync(DOWNLOAD_DIR)) {
-            fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-            console.log(`📂 Using new Instagram RAM disk directory: ${DOWNLOAD_DIR}`);
-        }
+        console.log(`🔍 Processing Instagram URL: ${url}`);
+        
+        ensureDownloadDir();
         
         const pythonStartTime = Date.now();
         const command = `${PYTHON_PATH} "${SCRIPT_PATH}" "${url}" "${DOWNLOAD_DIR}"`;
@@ -25,108 +22,97 @@ async function fetchInstagramPost(url) {
             const pythonEndTime = Date.now();
             
             if (error) {
+                console.error(`❌ Instaloader Error: ${stderr}`);
                 return reject(new Error(stderr));
             }
 
-            if (stdout.includes('"error":')) {
-                // Extract shortcode from URL
-                const shortcode = extractShortcode(url);
+            try {
+                const lines = stdout.split('\n');
+                const jsonLine = lines.filter(line => 
+                    line.trim().startsWith('{') && line.trim().endsWith('}')).pop();
                 
-                return resolve({
-                    error: "This content appears to be age-restricted or unavailable",
-                    shortcode,
-                    directUrl: `https://www.instagram.com/p/${shortcode}/`,
-                    is_restricted: true,
-                    is_error: true,
+                if (!jsonLine) {
+                    throw new Error("No JSON found in Python output");
+                }
+                
+                const pythonOutput = JSON.parse(jsonLine);
+                
+                if (pythonOutput.error) {
+                    return reject(new Error(pythonOutput.error));
+                }
+                
+                const fileSearchStartTime = Date.now();
+                const shortcode = extractShortcode(url);
+
+                if (!shortcode) {
+                    return reject(new Error("Could not extract shortcode from URL"));
+                }
+
+                const mediaFiles = findMediaFiles(shortcode);
+                
+                if (mediaFiles.length === 0) {
+                    return reject(new Error(`No media found for shortcode: ${shortcode}`));
+                }
+
+                const isCarousel = mediaFiles.length > 1 && !pythonOutput.is_video;
+                const videoFile = mediaFiles.find(file => file.endsWith(".mp4"));
+                
+                let mediaPath = getAppropriateMedia(pythonOutput.is_video, isCarousel, videoFile, mediaFiles);
+                
+                // Log file size for video
+                if (pythonOutput.is_video && typeof mediaPath === 'string') {
+                    const stats = fs.statSync(mediaPath);
+                    const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+                    console.log(`📤 Sending Instagram video: ${fileSizeMB} MB`);
+                }
+
+                const result = {
+                    mediaPath,
+                    caption: pythonOutput.caption || "",
+                    is_video: pythonOutput.is_video || false,
+                    is_carousel: isCarousel,
                     performance: {
                         totalTime: formatTime(Date.now() - startTime),
                         pythonTime: formatTime(pythonEndTime - pythonStartTime),
-                        fileTime: formatTime(0)
+                        fileTime: formatTime(Date.now() - fileSearchStartTime)
                     }
-                });
-            }
-            
-            // Parse Python output
-            const pythonOutput = parseJsonOutput(stdout);
-            if (!pythonOutput) {
-                return reject(new Error("Failed to parse Python output"));
-            }
-            
-            if (pythonOutput.error) {
-                return reject(new Error(pythonOutput.error));
-            }
-            
-            const fileSearchStartTime = Date.now();
-            // Extract shortcode from URL
-            const shortcode = extractShortcode(url);
-
-            if (!shortcode) {
-                return reject(new Error("Could not extract shortcode from URL"));
-            }
-
-            // Look for files with this shortcode
-            const allFiles = fs.readdirSync(DOWNLOAD_DIR)
-                .filter(file => file.startsWith(shortcode))
-                .map(file => path.join(DOWNLOAD_DIR, file));
-
-            const mediaFiles = allFiles.filter(file => /\.(mp4|jpg|png)$/.test(file));
+                };
                 
-            if (mediaFiles.length === 0) {
-                return reject(new Error(`No media found for shortcode: ${shortcode}`));
+                console.log(`✅ Instagram content processed successfully`);
+                resolve(result);
+                
+                scheduleCleanup(mediaPath);
+            } catch (err) {
+                reject(new Error(err.message));
             }
-
-            // Determine media type and prepare response
-            const isCarousel = mediaFiles.length > 1 && !pythonOutput.is_video;
-            const videoFile = mediaFiles.find(file => file.endsWith(".mp4"));
-            
-            let mediaPath;
-            if (pythonOutput.is_video && videoFile) {
-                mediaPath = videoFile;
-            } else if (isCarousel) {
-                mediaPath = sortCarouselImages(mediaFiles);
-            } else {
-                mediaPath = mediaFiles[0];
-            }
-
-            const result = {
-                mediaPath,
-                caption: pythonOutput.caption || "",
-                is_video: pythonOutput.is_video || false,
-                is_carousel: isCarousel,
-                performance: {
-                    totalTime: formatTime(Date.now() - startTime),
-                    pythonTime: formatTime(pythonEndTime - pythonStartTime),
-                    fileTime: formatTime(Date.now() - fileSearchStartTime)
-                }
-            };
-            
-            resolve(result);
-            
-            // Schedule cleanup of downloaded files
-            scheduleCleanup(Array.isArray(mediaPath) ? mediaPath : [mediaPath]);
         });
     });
 }
 
-function extractShortcode(url) {
-    const shortcode = url.split('/p/')[1]?.split(/[/?#]/)[0] || 
-                      url.split('/reel/')[1]?.split(/[/?#]/)[0];
-    return shortcode;
+function ensureDownloadDir() {
+    if (!fs.existsSync(DOWNLOAD_DIR)) {
+        fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+    }
 }
 
-function parseJsonOutput(stdout) {
-    try {
-        const lines = stdout.split('\n');
-        const jsonLine = lines.filter(line => 
-            line.trim().startsWith('{') && line.trim().endsWith('}')).pop();
-        
-        if (!jsonLine) {
-            return null;
-        }
-        
-        return JSON.parse(jsonLine);
-    } catch (error) {
-        return null;
+function extractShortcode(url) {
+    return url.split('/p/')[1]?.split(/[/?#]/)[0] || url.split('/reel/')[1]?.split(/[/?#]/)[0];
+}
+
+function findMediaFiles(shortcode) {
+    return fs.readdirSync(DOWNLOAD_DIR)
+        .filter(file => file.startsWith(shortcode))
+        .filter(file => /\.(mp4|jpg|png)$/.test(file))
+        .map(file => path.join(DOWNLOAD_DIR, file));
+}
+
+function getAppropriateMedia(isVideo, isCarousel, videoFile, mediaFiles) {
+    if (isVideo && videoFile) {
+        return videoFile;
+    } else if (isCarousel) {
+        return sortCarouselImages(mediaFiles);
+    } else {
+        return mediaFiles[0];
     }
 }
 
@@ -140,7 +126,9 @@ function sortCarouselImages(files) {
     });
 }
 
-function scheduleCleanup(files) {
+function scheduleCleanup(mediaPath) {
+    const files = Array.isArray(mediaPath) ? mediaPath : [mediaPath];
+    
     setTimeout(() => {
         files.forEach(file => {
             try {
@@ -151,33 +139,7 @@ function scheduleCleanup(files) {
                 // Silent error - file might be already deleted
             }
         });
-    }, CLEANUP_DELAY);
+    }, 5 * 60 * 1000); // 5 minutes
 }
-
-function cleanupOldFiles() {
-    if (!fs.existsSync(DOWNLOAD_DIR)) return;
-    
-    const files = fs.readdirSync(DOWNLOAD_DIR);
-    const now = Date.now();
-    
-    files.forEach(file => {
-        const filePath = path.join(DOWNLOAD_DIR, file);
-        const stats = fs.statSync(filePath);
-        
-        if ((now - stats.mtimeMs) > CLEANUP_DELAY) {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (error) {
-                // Silent error - file might be in use
-            }
-        }
-    });
-}
-
-// Run cleanup every 15 minutes
-setInterval(cleanupOldFiles, 15 * 60 * 1000);
-
-// Run cleanup on module load
-cleanupOldFiles();
 
 module.exports = { fetchInstagramPost };
