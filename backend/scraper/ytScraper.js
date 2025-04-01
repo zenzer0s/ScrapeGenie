@@ -23,10 +23,36 @@ function extractVideoId(url) {
   return videoId;
 }
 
-// Get thumbnail URL directly from video ID (no browser needed)
-function getThumbnailUrl(videoId) {
-  // Try the highest quality first
-  return `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+// Get thumbnail URL directly from video ID with quality fallback
+async function getThumbnailUrl(videoId) {
+  // Thumbnail qualities in order from highest to lowest
+  const qualityLevels = [
+    { name: 'maxresdefault', width: 1280, height: 720 },
+    { name: 'sddefault', width: 640, height: 480 },
+    { name: 'hqdefault', width: 480, height: 360 },
+    { name: 'mqdefault', width: 320, height: 180 },
+    { name: 'default', width: 120, height: 90 }
+  ];
+  
+  // Try each quality level in order
+  for (const quality of qualityLevels) {
+    const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/${quality.name}.jpg`;
+    try {
+      // Check if the thumbnail exists
+      const response = await fetch(thumbnailUrl, { method: 'HEAD' });
+      if (response.ok) {
+        console.log(`✅ Found thumbnail: ${quality.name} (${quality.width}x${quality.height})`);
+        return thumbnailUrl;
+      }
+    } catch (error) {
+      // Continue to next quality if fetch fails
+      console.log(`❌ Failed to check ${quality.name} thumbnail: ${error.message}`);
+    }
+  }
+  
+  // If all checks fail, return the medium quality which should always exist
+  console.log(`⚠️ Falling back to mqdefault thumbnail`);
+  return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
 }
 
 async function ytScraper(videoUrl) {
@@ -49,8 +75,8 @@ async function ytScraper(videoUrl) {
     };
   }
 
-  // Get thumbnail URL directly
-  const thumbnailUrl = getThumbnailUrl(videoId);
+  // Get thumbnail URL directly (now with await since it's async)
+  const thumbnailUrl = await getThumbnailUrl(videoId);
   
   // Start audio download in parallel with metadata scraping
   const audioPromise = fetchYouTubeAudio(videoUrl).catch(error => {
@@ -180,7 +206,7 @@ async function scrapeYouTube(url, retries = 2) {
       success: true,
       type: 'youtube',
       title: 'YouTube Video',
-      mediaUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '',
+      mediaUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : '',
       originalUrl: url,
       videoId: videoId || null,
       hasAudio: false

@@ -5,6 +5,9 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
+const requestLogCache = {};
+const LOG_DEBOUNCE_MS = 5000;
+
 // Ensure RAM disk directory exists
 const INSTAGRAM_TMP_DIR = "/dev/shm/instagram_tmp";
 
@@ -56,8 +59,30 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Simple request logger
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Consolidated request logger
 app.use((req, res, next) => {
+  // Skip logging for static files and frequent API calls
+  if (req.path.includes('.') || 
+      req.path === '/healthcheck' ||
+      (req.path.startsWith('/api/google/status') && req.method === 'GET')) {
+    return next();
+  }
+  
+  // Create a cache key for debouncing
+  const cacheKey = `${req.method}_${req.path}_${JSON.stringify(req.query)}`;
+  const now = Date.now();
+  
+  // Don't log if we've seen this exact request recently
+  if (requestLogCache[cacheKey] && (now - requestLogCache[cacheKey] < LOG_DEBOUNCE_MS)) {
+    return next();
+  }
+  
+  // Update cache
+  requestLogCache[cacheKey] = now;
+  
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
@@ -79,7 +104,7 @@ if (fs.existsSync(routesDir)) {
         const router = require(`./routes/${routeName}`);
         app.use(routePath, router);
         availableEndpoints.push(routePath);
-        
+       // console.log(`✅ Route loaded: ${routePath}`);
       } catch (err) {
         console.error(`Failed to load route ${routePath}:`, err.message);
       }

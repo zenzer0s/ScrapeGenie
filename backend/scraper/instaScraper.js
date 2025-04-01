@@ -23,7 +23,6 @@ async function fetchInstagramPost(url) {
         console.log(`📂 RAM disk directory: ${downloadDir}`);
         
         const pythonStartTime = Date.now();
-       // Replace your current hardcoded path with this:
         const pythonPath = process.env.PYTHON_PATH || "/usr/bin/python3";
         const command = `${pythonPath} "${scriptPath}" "${url}" "${downloadDir}"`;
         
@@ -39,6 +38,24 @@ async function fetchInstagramPost(url) {
             }
             
             console.log("Raw Python output:", stdout);
+
+            if (stdout.includes('"error":')) {
+                // Process error JSON normally but return it as a valid response
+                const errorJson = JSON.parse(stdout.match(/\{.*"error":.*\}/)[0]);
+                
+                return resolve({
+                    error: "This content appears to be age-restricted or unavailable",
+                    shortcode: url.split('/p/')[1]?.split(/[/?#]/)[0] || url.split('/reel/')[1]?.split(/[/?#]/)[0],
+                    directUrl: `https://www.instagram.com/p/${url.split('/p/')[1]?.split(/[/?#]/)[0] || url.split('/reel/')[1]?.split(/[/?#]/)[0]}/`,
+                    is_restricted: true,
+                    is_error: true,
+                    performance: {
+                        totalTime: formatTime(Date.now() - startTime),
+                        pythonTime: formatTime(pythonEndTime - pythonStartTime),
+                        fileTime: formatTime(0)
+                    }
+                });
+            }
             
             // Extract JSON from the output - look for the last line that contains JSON
             let pythonOutput;

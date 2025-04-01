@@ -8,6 +8,17 @@ const pinterestLogoutCommand = require('../commands/pinterest/pinterestLogoutCom
 const pinterestStatusCommand = require('../commands/pinterest/pinterestStatusCommand');
 const { handleYoutubeCallback } = require('./youtubeHandler');
 
+// Add this import
+const { handleSheetCallback } = require('./googleSheetHandler');
+
+// Add these imports for Google commands
+const googleConnectCommand = require('../commands/google/googleConnectCommand');
+const googleStatusCommand = require('../commands/google/googleStatusCommand');
+const googleSheetCommand = require('../commands/google/googleSheetCommand');
+
+// Import the handlers
+const { handleCreateSheetCallback, handleDisconnectCallback } = require('../commands/google/index');
+
 const { handleSettingsCallback } = require('./settingsHandler');
 const { getUserSettings } = require('../utils/settingsManager');
 const stepLogger = require('../utils/stepLogger');
@@ -63,6 +74,109 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     return;
   }
 
+  // Handle sheet-related callbacks
+  if (action.startsWith('sheet_')) {
+    try {
+      stepLogger.info('SHEET_CALLBACK_START', { action, chatId });
+      const handled = await handleSheetCallback(bot, callbackQuery);
+      if (handled) {
+        stepLogger.info('CALLBACK_HANDLED', {
+          action,
+          chatId,
+          elapsed: Date.now() - startTime,
+        });
+        return;
+      } else {
+        stepLogger.warn('SHEET_CALLBACK_UNHANDLED', { action, chatId });
+      }
+    } catch (error) {
+      stepLogger.error(`SHEET_CALLBACK_ERROR: ${error.message}`, { 
+        chatId, 
+        action 
+      });
+      
+      try {
+        await bot.answerCallbackQuery(callbackQuery.id, {
+          text: 'An error occurred. Please try again.',
+          show_alert: true
+        });
+      } catch (err) {
+        // Ignore errors in answering callback queries
+      }
+      return;
+    }
+  }
+
+  // Add this case to your callback handler:
+  if (action === 'google_auth_url') {
+    try {
+      const googleService = require('../services/googleService');
+      
+      stepLogger.info('GOOGLE_AUTH_URL_START', { chatId });
+      
+      // Get auth URL
+      let authUrl;
+      try {
+        authUrl = await googleService.getAuthUrl(chatId);
+        stepLogger.info('GOOGLE_AUTH_URL_RECEIVED', { 
+          chatId, 
+          urlLength: authUrl ? authUrl.length : 0,
+          urlStart: authUrl ? authUrl.substring(0, 30) + '...' : 'undefined'
+        });
+      } catch (urlError) {
+        stepLogger.error(`GOOGLE_AUTH_URL_FETCH_ERROR: ${urlError.message}`, { chatId });
+        throw urlError;
+      }
+      
+      if (!authUrl) {
+        throw new Error('Authentication URL is undefined');
+      }
+      
+      // Send the URL as a regular message
+      await bot.sendMessage(
+        chatId, 
+        `Please click this link to connect Google Sheets:\n\n${authUrl}`
+      );
+      
+      // Answer the callback query
+      await bot.answerCallbackQuery(callbackQuery.id);
+      
+      stepLogger.info('CALLBACK_HANDLED', {
+        action,
+        chatId,
+        elapsed: Date.now() - startTime,
+      });
+      return;
+    } catch (error) {
+      stepLogger.error(`GOOGLE_AUTH_URL_ERROR: ${error.message}`, { chatId });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to generate authentication URL. Please try again.',
+        show_alert: true
+      });
+      return;
+    }
+  }
+
+  // Handle Google-specific callbacks
+  if (action === 'google_create_sheet') {
+    try {
+      stepLogger.info('GOOGLE_CREATE_SHEET_START', { chatId });
+      await handleCreateSheetCallback(bot, callbackQuery);
+      stepLogger.info('GOOGLE_CREATE_SHEET_SUCCESS', { chatId });
+      return;
+    } catch (error) {
+      stepLogger.error('GOOGLE_CREATE_SHEET_ERROR', { chatId, error: error.message });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to create spreadsheet. Please try again.',
+        show_alert: true
+      });
+      return;
+    }
+  } else if (action === 'google_disconnect_confirm' || action === 'google_disconnect_cancel') {
+    await handleDisconnectCallback(bot, callbackQuery);
+    return;
+  }
+
   try {
     // First, check if it's a help-settings related action
     if (action === 'toggle_settings' || action === 'toggle_media' || action === 'back_to_help') {
@@ -86,6 +200,32 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
       'pinterest_login': () => pinterestLoginCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'pinterest_logout': () => pinterestLogoutCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
       'pinterest_status': () => pinterestStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      
+      // Add these new Google-related handlers
+      'google_connect': () => googleConnectCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_status': () => googleStatusCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      'google_sheet': () => googleSheetCommand(bot, { chat: { id: chatId }, from: callbackQuery.from }),
+      
+      'google_disconnect_confirm': async () => {
+        try {
+          await handleDisconnectCallback(bot, callbackQuery);
+          return {}; // No message to delete
+        } catch (error) {
+          stepLogger.error('GOOGLE_DISCONNECT_CONFIRM_ERROR', { chatId, error: error.message });
+          throw error;
+        }
+      },
+      
+      'google_disconnect_cancel': async () => {
+        try {
+          await handleDisconnectCallback(bot, callbackQuery);
+          return {}; // No message to delete
+        } catch (error) {
+          stepLogger.error('GOOGLE_DISCONNECT_CANCEL_ERROR', { chatId, error: error.message });
+          throw error;
+        }
+      },
+      
       'open_settings': async () => {
         try {
           const userId = callbackQuery.from.id.toString();
