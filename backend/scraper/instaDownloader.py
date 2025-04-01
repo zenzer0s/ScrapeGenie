@@ -7,8 +7,6 @@ import json
 # Helper function for timing
 def log_time(start_time, step_name):
     elapsed = time.time() - start_time
-    formatted = f"{elapsed:.2f}s"
-    print(f"⏱️ {step_name}: {formatted}")
     return time.time()
 
 # Main execution
@@ -41,9 +39,8 @@ start_extraction = log_time(start_init, "Instaloader initialization")
 
 try:
     # Extract post shortcode
-    post_shortcode = url.split("/")[-2]
-    if not post_shortcode:
-        post_shortcode = url.split("/")[-3]
+    path_parts = url.rstrip('/').split('/')
+    post_shortcode = next((part for part in reversed(path_parts) if part), None)
     
     start_fetch = log_time(start_extraction, "URL extraction")
     
@@ -59,8 +56,8 @@ try:
     result = {
         "success": True,
         "shortcode": post_shortcode,
-        "caption": post.caption if hasattr(post, 'caption') else "",
-        "is_video": post.is_video if hasattr(post, 'is_video') else False,
+        "caption": getattr(post, 'caption', ""),
+        "is_video": getattr(post, 'is_video', False),
         "total_time": f"{time.time() - start_total:.2f}s"
     }
     
