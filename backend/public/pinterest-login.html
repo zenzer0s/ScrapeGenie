@@ -27,7 +27,10 @@
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required placeholder="Enter your password">
+                <small class="form-hint">Pinterest requires at least 8 characters</small>
             </div>
+
+            <input type="hidden" id="csrfToken" name="_csrf" value="<%= csrfToken %>">
             
             <button type="submit" id="submitBtn">Connect Pinterest Account</button>
         </form>
