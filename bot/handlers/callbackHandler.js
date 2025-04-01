@@ -107,6 +107,57 @@ async function handleCallbackQuery(bot, callbackQuery, checkBackendStatus) {
     }
   }
 
+  // Add this near the start of your handleCallback function
+  if (action === 'google_disconnect') {
+    try {
+      // Show confirmation dialog
+      const confirmKeyboard = {
+        inline_keyboard: [
+          [
+            { text: '❌ Yes, disconnect', callback_data: 'google_disconnect_confirm' },
+            { text: '↩️ Cancel', callback_data: 'google_disconnect_cancel' }
+          ]
+        ]
+      };
+      
+      await bot.editMessageText(
+        '⚠️ Are you sure you want to disconnect Google Sheets?\n\n' +
+        'This will remove access to your saved data until you connect again.',
+        {
+          chat_id: chatId,
+          message_id: callbackQuery.message.message_id,
+          reply_markup: confirmKeyboard
+        }
+      );
+      
+      await bot.answerCallbackQuery(callbackQuery.id);
+      stepLogger.info('GOOGLE_DISCONNECT_CONFIRM_REQUESTED', { chatId });
+      return;
+    } catch (error) {
+      stepLogger.error('GOOGLE_DISCONNECT_ERROR', { chatId, error: error.message });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to show disconnect confirmation.',
+        show_alert: true
+      });
+      return;
+    }
+  } 
+  else if (action === 'google_disconnect_confirm' || action === 'google_disconnect_cancel') {
+    try {
+      const { handleDisconnectCallback } = require('../commands/google/index');
+      await handleDisconnectCallback(bot, callbackQuery);
+      stepLogger.info('GOOGLE_DISCONNECT_HANDLED', { chatId, action });
+      return;
+    } catch (error) {
+      stepLogger.error('GOOGLE_DISCONNECT_CALLBACK_ERROR', { chatId, error: error.message });
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: 'Failed to process disconnect request.',
+        show_alert: true
+      });
+      return;
+    }
+  }
+
   // Add this case to your callback handler:
   if (action === 'google_auth_url') {
     try {
