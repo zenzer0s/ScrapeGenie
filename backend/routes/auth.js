@@ -54,7 +54,7 @@ router.post('/generate-token', (req, res) => {
   }, 15 * 60 * 1000);
   
   // Return the login URL with fallback
-  const loginUrl = `${BACKEND_URL}/api/auth/login/${token}`;
+  const loginUrl = `${BACKEND_URL}/auth/login/${token}`;
   console.log(`Generated login URL: ${loginUrl}`); // Add this for debugging
   
   res.json({
@@ -64,15 +64,15 @@ router.post('/generate-token', (req, res) => {
   });
 });
 
-// Update the login route handler
+// Handle login submission - add better debugging
 router.post('/login/:token', async (req, res) => {
   const { token } = req.params;
   const { username, password } = req.body;
   
   console.log(`Received login request for token: ${token}`);
   
-  // Check if token is valid
   if (!pendingLogins.has(token)) {
+    console.log(`Token not found in pendingLogins: ${token}`);
     return res.status(400).json({ success: false, error: 'Invalid or expired token' });
   }
   
@@ -82,31 +82,44 @@ router.post('/login/:token', async (req, res) => {
   try {
     console.log(`Attempting to login to Pinterest with username: ${username.substring(0, 3)}***`);
     
-    // Get session data directly from loginToPinterest
-    const result = await pinterestScraper.loginToPinterest(username, password);
-    
-    if (!result.success) {
-      console.log(`Login failed: ${result.error}`);
-      return res.status(401).json({ success: false, error: result.error });
+    // Check if function exists
+    if (typeof pinterestScraper.loginToPinterest !== 'function') {
+      console.error('CRITICAL ERROR: loginToPinterest is not a function!');
+      console.error('Available methods:', Object.keys(pinterestScraper));
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Server configuration error: Login function not available' 
+      });
     }
     
-    // Save the session using sessionManager
-    sessionManager.saveSession(userId, {
-      service: 'pinterest',
-      cookies: result.cookies,
-      localStorage: result.localStorage,
-      userAgent: result.userAgent,
-      createdAt: Date.now()
-    });
+    // Use the function with proper error handling
+    const loginResult = await pinterestScraper.loginToPinterest(username, password);
     
-    // Clean up the pending login
-    pendingLogins.delete(token);
-    
-    console.log(`Login successful for user: ${userId}`);
-    return res.json({ success: true });
+    if (loginResult.success) {
+      // Count cookies for debugging
+      console.log(`Login successful! Got ${loginResult.cookies.length} cookies`);
+      
+      // Log cookie names (not values) for debugging
+      const cookieNames = loginResult.cookies.map(c => c.name).join(', ');
+      console.log(`Cookie names: ${cookieNames}`);
+      
+      // Store the session
+      sessionManager.saveSession(userId, {
+        cookies: loginResult.cookies,
+        createdAt: Date.now(),
+        service: 'pinterest'
+      });
+      
+      console.log(`Session saved for user ${userId}`);
+      pendingLogins.delete(token);
+      return res.json({ success: true, message: 'Login successful' });
+    } else {
+      console.error(`Login failed: ${loginResult.error}`);
+      return res.status(401).json({ success: false, error: loginResult.error });
+    }
   } catch (error) {
-    console.log(`Login failed: ${error.message}`);
-    return res.status(401).json({ success: false, error: error.message });
+    console.error('Login error:', error);
+    return res.status(500).json({ success: false, error: 'Authentication failed' });
   }
 });
 
