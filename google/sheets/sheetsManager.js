@@ -185,72 +185,56 @@ async function appendRow(spreadsheetId, values, range = 'Website Metadata!A:D') 
 }
 
 /**
- * Delete an entry from a sheet by URL
- * @param {string} spreadsheetId - ID of the spreadsheet
- * @param {string} url - URL to find and delete
- * @returns {Promise<boolean>} - True if deleted
+ * Delete an entry by URL
+ * @param {string} spreadsheetId - The ID of the spreadsheet
+ * @param {string} url - The URL to find and delete
+ * @returns {Promise<boolean>} - True if deletion was successful
  */
 async function deleteEntryByUrl(spreadsheetId, url) {
     try {
         console.log(`Deleting entry with URL ${url}`);
         
-        if (!sheets) {
-            throw new Error('Google Sheets API not initialized');
+        // Instead, use the getSpreadsheetData function that already exists
+        const rows = await getSpreadsheetData(spreadsheetId);
+        
+        if (!rows || rows.length <= 1) {
+            throw new Error('No data found in spreadsheet');
         }
-        
-        // First, get the spreadsheet metadata
-        const spreadsheet = await sheets.spreadsheets.get({
-            spreadsheetId
-        });
-        
-        if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
-            throw new Error('Spreadsheet has no sheets');
-        }
-        
-        // Get the first sheet info
-        const firstSheet = spreadsheet.data.sheets[0];
-        const sheetId = firstSheet.properties.sheetId;
-        const sheetName = firstSheet.properties.title;
-        
-        // Get data using the actual sheet name
-        const data = await getSpreadsheetData(spreadsheetId, `${sheetName}!A1:Z1000`);
         
         // Find the row with the matching URL
-        const urlColumnIndex = 1; // URL is in column B
-        let rowToDelete = -1;
+        const headers = rows[0];
+        const urlColumnIndex = headers.findIndex(h => h.toLowerCase() === 'url');
         
-        for (let i = 0; i < data.length; i++) {
-            if (data[i][urlColumnIndex] === url) {
-                rowToDelete = i + 2; // +2 because row 1 is header, and data array is 0-indexed
+        if (urlColumnIndex === -1) {
+            throw new Error('URL column not found in spreadsheet');
+        }
+        
+        let rowIndex = -1;
+        for (let i = 1; i < rows.length; i++) {
+            if (rows[i][urlColumnIndex] === url) {
+                rowIndex = i;
                 break;
             }
         }
         
-        if (rowToDelete === -1) {
-            throw new Error(`URL not found: ${url}`);
+        if (rowIndex === -1) {
+            console.log(`URL ${url} not found in spreadsheet`);
+            throw new Error('URL not found in spreadsheet');
         }
         
-        // Delete the row using the actual sheet ID
-        await sheets.spreadsheets.batchUpdate({
+        // Now delete the row using the API
+        const sheetName = lastSheetNames[spreadsheetId]?.name || 'Sheet1';
+        
+        // Clear the content of the row (effective deletion)
+        await sheets.spreadsheets.values.clear({
             spreadsheetId,
-            requestBody: {
-                requests: [{
-                    deleteDimension: {
-                        range: {
-                            sheetId: sheetId,
-                            dimension: "ROWS",
-                            startIndex: rowToDelete - 1,
-                            endIndex: rowToDelete
-                        }
-                    }
-                }]
-            }
+            range: `${sheetName}!A${rowIndex + 1}:Z${rowIndex + 1}`
         });
         
         console.log(`Successfully deleted entry with URL: ${url}`);
         return true;
     } catch (error) {
-        console.error(`Error deleting entry: ${error.message}`);
+        console.error(`Error deleting entry by URL: ${error.message}`);
         throw error;
     }
 }
