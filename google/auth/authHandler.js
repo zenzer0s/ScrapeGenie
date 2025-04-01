@@ -107,6 +107,35 @@ function generateAuthUrl(state) {
   return authUrl;
 }
 
+/**
+ * Generate OAuth URL for user authentication with error handling
+ * @param {string} state - State parameter
+ * @returns {string} - Authorization URL
+ */
+function getAuthUrl(state) {
+  try {
+    console.log(`Generating auth URL with state: ${state}`);
+    
+    // Make sure oauth2Client is initialized
+    if (!oauth2Client) {
+      throw new Error('OAuth client not initialized');
+    }
+    
+    // Generate the auth URL
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      state: state,
+      prompt: 'consent' // Always show consent screen to get refresh token
+    });
+    
+    return authUrl;
+  } catch (error) {
+    console.error(`Error generating auth URL: ${error.message}`);
+    throw error;
+  }
+}
+
 // Initialize OAuth client right away
 initializeOAuth();
 
@@ -115,5 +144,6 @@ module.exports = {
   setCredentials,
   getAuthClient,
   generateAuthUrl,
-  getTokensFromCode
+  getTokensFromCode,
+  getAuthUrl // Add this line
 };
