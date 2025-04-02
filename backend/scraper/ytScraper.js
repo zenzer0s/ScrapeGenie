@@ -1,4 +1,3 @@
-// ytScraper.js
 const puppeteer = require('puppeteer');
 const { getBrowser, getPage, releasePage } = require('./browserManager');
 const { fetchYouTubeAudio } = require('./ytAudio');
@@ -54,7 +53,12 @@ async function ytScraper(videoUrl) {
 
   // Begin parallel operations
   const thumbnailPromise = getThumbnailUrl(videoId);
-  const audioPromise = fetchYouTubeAudio(videoUrl).catch(() => null);
+  const audioPromise = fetchYouTubeAudio ? 
+    fetchYouTubeAudio(videoUrl).catch(error => {
+      console.error(`Audio fetch error: ${error.message}`);
+      return null;
+    }) : 
+    Promise.resolve(null);
   
   let page = null;
   try {
