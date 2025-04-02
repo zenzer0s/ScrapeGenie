@@ -1,31 +1,20 @@
 // ytScraper.js
 const puppeteer = require('puppeteer');
-const getBrowser = require('./browserManager');
-const { fetchYouTubeAudio } = require('./ytAudio'); // Add this line
+const { getBrowser, getPage, releasePage } = require('./browserManager');
+const { fetchYouTubeAudio } = require('./ytAudio');
 
-// Extract video ID from various YouTube URL formats
 function extractVideoId(url) {
-  let videoId = null;
-  
-  // Handle youtube.com/watch?v= format
   if (url.includes('youtube.com/watch?v=')) {
-    videoId = new URL(url).searchParams.get('v');
-  } 
-  // Handle youtube.com/shorts/ format
-  else if (url.includes('youtube.com/shorts/')) {
-    videoId = url.split('shorts/')[1]?.split(/[?#]/)[0];
-  } 
-  // Handle youtu.be/ format
-  else if (url.includes('youtu.be/')) {
-    videoId = url.split('youtu.be/')[1]?.split(/[?#]/)[0];
+    return new URL(url).searchParams.get('v');
+  } else if (url.includes('youtube.com/shorts/')) {
+    return url.split('shorts/')[1]?.split(/[?#]/)[0];
+  } else if (url.includes('youtu.be/')) {
+    return url.split('youtu.be/')[1]?.split(/[?#]/)[0];
   }
-  
-  return videoId;
+  return null;
 }
 
-// Get thumbnail URL directly from video ID with quality fallback
 async function getThumbnailUrl(videoId) {
-  // Thumbnail qualities in order from highest to lowest
   const qualityLevels = [
     { name: 'maxresdefault', width: 1280, height: 720 },
     { name: 'sddefault', width: 640, height: 480 },
@@ -34,114 +23,85 @@ async function getThumbnailUrl(videoId) {
     { name: 'default', width: 120, height: 90 }
   ];
   
-  // Try each quality level in order
   for (const quality of qualityLevels) {
     const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/${quality.name}.jpg`;
     try {
-      // Check if the thumbnail exists
       const response = await fetch(thumbnailUrl, { method: 'HEAD' });
       if (response.ok) {
-        console.log(`✅ Found thumbnail: ${quality.name} (${quality.width}x${quality.height})`);
+        console.log(`✅ Found thumbnail: ${quality.name}`);
         return thumbnailUrl;
       }
     } catch (error) {
       // Continue to next quality if fetch fails
-      console.log(`❌ Failed to check ${quality.name} thumbnail: ${error.message}`);
     }
   }
   
-  // If all checks fail, return the medium quality which should always exist
-  console.log(`⚠️ Falling back to mqdefault thumbnail`);
   return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
 }
 
 async function ytScraper(videoUrl) {
-  // Check if it's a valid YouTube URL
+  // Validate URL and extract video ID
   if (!videoUrl.includes('youtube.com/watch?v=') && 
       !videoUrl.includes('youtu.be/') && 
       !videoUrl.includes('youtube.com/shorts/')) {
-    return { 
-      success: false, 
-      error: "Invalid YouTube URL" 
-    };
+    return { success: false, error: "Invalid YouTube URL" };
   }
 
-  // Extract video ID without browser
   const videoId = extractVideoId(videoUrl);
   if (!videoId) {
-    return {
-      success: false,
-      error: "Could not extract video ID"
-    };
+    return { success: false, error: "Could not extract video ID" };
   }
 
-  // Get thumbnail URL directly (now with await since it's async)
-  const thumbnailUrl = await getThumbnailUrl(videoId);
+  // Begin parallel operations
+  const thumbnailPromise = getThumbnailUrl(videoId);
+  const audioPromise = fetchYouTubeAudio(videoUrl).catch(() => null);
   
-  // Start audio download in parallel with metadata scraping
-  const audioPromise = fetchYouTubeAudio(videoUrl).catch(error => {
-    console.error('❌ Audio download failed:', error.message);
-    return null; // Return null if audio download fails
-  });
-  
-  // Now we only need to fetch the title
-  let browser = null;
+  let page = null;
   try {
-    browser = await getBrowser();
-    const page = await browser.newPage();
-    
-    // Optimize page for speed
+    // Get page and set up
+    page = await getPage();
+    await page.removeAllListeners('request');
     await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      // Only allow document and script requests - block images, stylesheets, fonts, etc.
-      const resourceType = req.resourceType();
-      if (resourceType === 'document' || resourceType === 'script') {
-        req.continue();
-      } else {
-        req.abort();
+    
+    // Handle requests safely
+    page.on('request', (request) => {
+      try {
+        request.continue();
+      } catch (error) {
+        // Ignore "already handled" errors
       }
     });
     
-    // Set a low viewport size to reduce resource usage
+    // Optimize page settings
     await page.setViewport({ width: 800, height: 600 });
-    
-    // Set user agent
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
-      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-      'Chrome/91.0.4472.124 Safari/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     );
     
-    // Wait for shorter time and only for DOMContentLoaded, not networkidle0
-    await page.goto(videoUrl, { 
-      waitUntil: 'domcontentloaded', 
-      timeout: 15000 
-    });
-
-    // Extract title more efficiently
+    // Navigate and extract title
+    await page.goto(videoUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
     const title = await page.evaluate(() => {
-      // Try different selectors for the title in order of reliability
       return document.querySelector('meta[property="og:title"]')?.content ||
              document.querySelector('meta[name="title"]')?.content ||
              document.querySelector('title')?.textContent?.replace(' - YouTube', '') || 
              "Untitled YouTube Video";
     });
 
-    // Wait for audio download to complete
-    const audio = await audioPromise;
+    // Wait for parallel operations to complete
+    const [thumbnailUrl, audio] = await Promise.all([thumbnailPromise, audioPromise]);
 
-    // Build the result object with all existing properties
+    // Build result object
     const result = {
       success: true,
       type: 'youtube',
-      title: title,
+      title,
       mediaUrl: thumbnailUrl,
       originalUrl: videoUrl,
-      videoId: videoId
+      videoId
     };
 
-    // Add audio data if available
-    if (audio && audio.success) {
+    // Add audio if available
+    if (audio?.success) {
       result.audioFile = audio.filepath;
       result.audioType = audio.fileExtension;
       result.hasAudio = true;
@@ -150,42 +110,30 @@ async function ytScraper(videoUrl) {
     }
 
     return result;
-
   } catch (error) {
-    console.error("YouTube Scrape Error:", error);
+    // Handle error case
+    const [thumbnailUrl, audio] = await Promise.all([thumbnailPromise, audioPromise]);
     
-    // Wait for the audio even if metadata scraping fails
-    const audio = await audioPromise;
-    
-    // Even if scraping fails, we still have the thumbnail URL, so return partial success
     if (videoId) {
-      const result = {
+      return {
         success: true,
         type: 'youtube',
-        title: "YouTube Video", // Generic fallback title
+        title: "YouTube Video",
         mediaUrl: thumbnailUrl,
         originalUrl: videoUrl,
-        videoId: videoId
+        videoId,
+        hasAudio: audio?.success || false,
+        audioFile: audio?.filepath,
+        audioType: audio?.fileExtension
       };
-      
-      // Add audio data if available
-      if (audio && audio.success) {
-        result.audioFile = audio.filepath;
-        result.audioType = audio.fileExtension;
-        result.hasAudio = true;
-      } else {
-        result.hasAudio = false;
-      }
-      
-      return result;
     }
     
-    return { 
-      success: false, 
-      error: "Failed to fetch YouTube video details" 
-    };
+    return { success: false, error: "Failed to fetch YouTube video details" };
   } finally {
-    // We don't close the browser here since we're using browserManager
+    if (page) {
+      await page.removeAllListeners('request');
+      await releasePage(page);
+    }
   }
 }
 
@@ -194,14 +142,10 @@ async function scrapeYouTube(url, retries = 2) {
     return await ytScraper(url);
   } catch (error) {
     if (retries > 0) {
-      console.log(`⚠️ YouTube scrape failed, retrying (${retries} attempts left)...`);
       return await scrapeYouTube(url, retries - 1);
     }
     
-    // Extract video ID for fallback
     const videoId = extractVideoId(url);
-    
-    // Fall back to minimal data if all retries fail
     return {
       success: true,
       type: 'youtube',
