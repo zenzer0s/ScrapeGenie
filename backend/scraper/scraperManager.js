@@ -1,7 +1,6 @@
 const { fetchInstagramPost } = require("./instaScraper");
 const { scrapePinterest } = require("./pinterestScraper");
-const { scrapeYouTube } = require("./ytScraper");
-const { fetchYouTubeShort } = require("./ytShort");
+const { scrapeYouTube, fetchYouTubeShort } = require("./youtubeManager");
 const scraper = require("./scraper");
 const axios = require("axios");
 
