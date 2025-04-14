@@ -102,7 +102,7 @@ async function handleSheetCallback(bot, query) {
 async function handleSheetEntryView(bot, query, index) {
     const chatId = query.message.chat.id;
     const messageId = query.message.message_id;
-    
+
     try {
         // Get current page from button data
         let currentPage = 1; // Default to page 1
@@ -154,12 +154,11 @@ async function handleSheetEntryView(bot, query, index) {
         // Create back button with delete option
         const backButton = createBackButton(currentPage, index);
         
-        // Update the message with website details
+        // Update the message with website details (remove parse_mode)
         await bot.editMessageText(detailMessage, {
             chat_id: chatId,
             message_id: messageId,
-            parse_mode: 'Markdown',
-            reply_markup: backButton  // This is correct if backButton has the right format
+            reply_markup: backButton
         });
         
         // Answer the callback query
