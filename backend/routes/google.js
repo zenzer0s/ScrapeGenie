@@ -108,7 +108,7 @@ router.get('/auth-url', async (req, res) => {
         const state = Buffer.from(chatId).toString('base64');
         const authUrl = authHandler.generateAuthUrl(state);
         
-        res.json({ url: authUrl });
+        res.json({ authUrl: authUrl });
     } catch (error) {
         console.error('Error generating auth URL:', error);
         res.status(500).json({ error: error.message });
