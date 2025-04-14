@@ -1,4 +1,3 @@
-// Create a new file: bot/utils/sheetUtils.js
 function formatSheetDataMessage(pageData) {
     if (!pageData.entries || pageData.entries.length === 0) {
         return '📊 *Your Saved Websites*\n\nYou haven\'t saved any websites yet. Send a URL to get started!';
@@ -84,21 +83,22 @@ function formatSheetDetailMessage(entry) {
     if (!entry) {
         return '❌ Website details not found.';
     }
-    
-    let message = `📝 *Website Details*\n\n`;
-    message += `*Title:* ${entry.title || 'Untitled'}\n\n`;
-    message += `*URL:* ${entry.url || 'No URL'}\n\n`;
-    
-    // Format description
+
+    // Use plain text, remove Markdown '*' characters
+    const title = entry.title || 'Untitled';
+    const url = entry.url || 'No URL';
     const description = entry.description || 'No description';
-    message += `*Description:* ${description}\n\n`;
-    
-    // Format date
+
+    let message = `📝 Website Details\n\n`; // Removed '*'
+    message += `Title: ${title}\n\n`;       // Removed '*'
+    message += `URL: ${url}\n\n`;           // Removed '*'
+    message += `Description: ${description}\n\n`; // Removed '*'
+
     if (entry.dateAdded) {
         const date = new Date(entry.dateAdded);
-        message += `*Added:* ${date.toLocaleDateString()}`;
+        message += `Added: ${date.toLocaleDateString()}`; // Removed '*'
     }
-    
+
     return message;
 }
 
