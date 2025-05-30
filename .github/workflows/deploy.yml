@@ -11,7 +11,7 @@ env:
   VM_NAME: "${{ secrets.VM_NAME }}"
   VM_ZONE: "${{ secrets.VM_ZONE }}"
   SERVER_IP: "${{ secrets.SERVER_IP }}"
-  DUCKDNS_DOMAIN: "scrapegenie.duckdns.org"  # Add your DuckDNS domain here
+  DUCKDNS_DOMAIN: "scrapegenie.duckdns.org" 
 
 jobs:
   deploy:
