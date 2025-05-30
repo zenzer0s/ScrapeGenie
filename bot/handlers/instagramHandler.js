@@ -201,6 +201,12 @@ async function handleInstagram(bot, chatId, url, data) {
       error: error.message 
     });
 
+    // If the error is a friendly backend error, show it to the user
+    if (error.message && error.message.includes('Instagram Stories download is not supported')) {
+      await bot.sendMessage(chatId, `⚠️ Instagram Stories download is not supported. Please provide a post, reel, or IGTV link.`);
+      return;
+    }
+
     // Send a fallback message to the user
     try {
       await bot.sendMessage(
