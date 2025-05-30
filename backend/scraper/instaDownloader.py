@@ -25,13 +25,19 @@ L = instaloader.Instaloader(
 
 try:
     shortcode = None
+    # Check for story link and handle gracefully
     if "/p/" in url:
         shortcode = url.split("/p/")[1].split("/")[0].split("?")[0]
     elif "/reel/" in url:
         shortcode = url.split("/reel/")[1].split("/")[0].split("?")[0]
     elif "/tv/" in url:
         shortcode = url.split("/tv/")[1].split("/")[0].split("?")[0]
-    
+    elif "/stories/" in url:
+        print(json.dumps({
+            "error": "Instagram Stories download is not supported. Please provide a post, reel, or IGTV link."
+        }))
+        sys.exit(1)
+
     if not shortcode:
         print(json.dumps({"error": "Could not extract post shortcode from URL"}))
         sys.exit(1)

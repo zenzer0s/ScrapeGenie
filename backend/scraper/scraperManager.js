@@ -5,7 +5,8 @@ const scraper = require("./scraper");
 const axios = require("axios");
 
 const PATTERNS = {
-    instagram: /https?:\/\/(www\.)?instagram\.com\/(p|reel|tv|stories)\//,
+    // Exclude 'stories' from the Instagram pattern so story links are not routed to the downloader
+    instagram: /https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\//,
     pinterest: /https?:\/\/(www\.)?pinterest\.[a-z]+\/pin\//,
     pinterestAny: /https?:\/\/(www\.)?pinterest\.[a-z]+/,
     pinterestShort: /https?:\/\/(www\.)?pin\.it\//,
@@ -41,6 +42,13 @@ async function scrapeContent(url, userId = 'default') {
     try {
         if (PATTERNS.pinterestShort.test(url)) {
             url = await expandPinterestUrl(url);
+        }
+
+        // If the link is an Instagram story, return a friendly message
+        if (/https?:\/\/(www\.)?instagram\.com\/stories\//.test(url)) {
+            return {
+                error: "Instagram Stories download is not supported. Please provide a post, reel, or IGTV link."
+            };
         }
 
         if (PATTERNS.instagram.test(url)) {
