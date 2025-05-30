@@ -35,6 +35,12 @@ async function handleInstagram(bot, chatId, url, data) {
       data = data.data; // Extract the nested data
     }
 
+    // If backend returned a friendly error (e.g., for stories), show it to the user and exit early
+    if (data && data.error) {
+      await bot.sendMessage(chatId, `⚠️ ${data.error}`);
+      return;
+    }
+
     // Now check for mediaPath in the correct data object
     if (!data || !data.mediaPath) {
       stepLogger.error('INSTAGRAM_MEDIA_PATH_MISSING', { 
